@@ -1,0 +1,122 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#1a365d', 'primaryTextColor': '#fff', 'primaryBorderColor': '#2d4a6f', 'lineColor': '#4a5568', 'secondaryColor': '#2d3748', 'tertiaryColor': '#4a5568', 'background': '#0d1117', 'mainBkg': '#1a365d', 'nodeBorder': '#4a5568', 'clusterBkg': '#161b22', 'clusterBorder': '#30363d', 'titleColor': '#e2e8f0', 'edgeLabelBackground': '#21262d'}}}%%
+
+flowchart TB
+    subgraph CONFIG["⚙️ Configuration Layer"]
+        direction LR
+        CLI["CLI Interface"]
+        YAML["Config Files<br/>(YAML/JSON)"]
+        PARAMS["Parameters<br/>• Capital & Risk<br/>• Markets<br/>• Preferences"]
+    end
+
+    subgraph DATA_SOURCES["📊 Data Sources & APIs"]
+        direction TB
+        subgraph MARKET_DATA["Market Data"]
+            YAHOO["Yahoo Finance"]
+            ALPHA["Alpha Vantage"]
+            EODHD["EODHD/Tiingo"]
+            NORDNET["Nordnet API"]
+        end
+        subgraph NEWS_DATA["News & Sentiment"]
+            FINNHUB["Finnhub"]
+            NEWSCATCHER["Newscatcher"]
+        end
+        subgraph FILINGS["Financial Reports"]
+            EDGAR["EDGAR Filings"]
+            EU_REG["EU Registries"]
+        end
+    end
+
+    subgraph CACHE_LAYER["💾 Caching & Storage Layer"]
+        direction LR
+        API_CACHE["API Response Cache<br/>(JSON/Parquet)"]
+        FEATURE_CACHE["Feature Cache<br/>(Preprocessed Data)"]
+        VECTOR_DB["Vector Store<br/>(Embeddings/RAG)"]
+        PORTFOLIO_DB["Portfolio State<br/>(SQLite/JSON)"]
+    end
+
+    subgraph CREWAI["🤖 CrewAI Agent System"]
+        direction TB
+        
+        subgraph COLLECTION_AGENTS["Data Collection"]
+            SCANNER["🔍 Market Scanner Agent<br/>• Fetch daily data<br/>• Screen instruments<br/>• Detect anomalies"]
+        end
+
+        subgraph ANALYSIS_AGENTS["Analysis Agents"]
+            direction LR
+            FUNDAMENTAL["📈 Fundamental<br/>Analysis Agent<br/>• Earnings analysis<br/>• Valuation scores<br/>• Financial health"]
+            TECHNICAL["📉 Technical<br/>Analysis Agent<br/>• Trend indicators<br/>• Momentum signals<br/>• Pattern detection"]
+            SENTIMENT["📰 News &<br/>Sentiment Agent<br/>• Event detection<br/>• Sentiment scoring<br/>• News summarization"]
+        end
+
+        subgraph SYNTHESIS_AGENTS["Signal Generation"]
+            SIGNAL["⚡ Signal Synthesis Agent<br/>• Merge all scores<br/>• Generate Buy/Hold/Avoid<br/>• Confidence metrics<br/>• Allocation suggestions"]
+        end
+
+        subgraph OUTPUT_AGENTS["Report Generation"]
+            REPORT["📋 Daily Report Agent<br/>• Top opportunities<br/>• Portfolio alerts<br/>• Market summaries<br/>• Actionable insights"]
+        end
+    end
+
+    subgraph TOOLS["🔧 CrewAI Tools"]
+        direction LR
+        PRICE_TOOL["Price Fetcher"]
+        NEWS_TOOL["News Fetcher"]
+        CALC_TOOL["Indicator Calculator"]
+        REPORT_TOOL["Report Generator"]
+    end
+
+    subgraph OUTPUT["📤 Output Layer"]
+        direction TB
+        DAILY_REPORT["Daily Report<br/>(Markdown/HTML)"]
+        SIGNALS["Investment Signals<br/>(JSON)"]
+        ALERTS["Portfolio Alerts"]
+        WATCHLIST["Watchlist Updates"]
+    end
+
+    subgraph USER["👤 User Interface"]
+        direction LR
+        TERMINAL["Terminal/CLI"]
+        EMAIL["Email Notifications"]
+        FILES["Report Files"]
+    end
+
+    %% Connections
+    CONFIG --> CREWAI
+    DATA_SOURCES --> CACHE_LAYER
+    CACHE_LAYER --> SCANNER
+    
+    SCANNER --> FUNDAMENTAL
+    SCANNER --> TECHNICAL
+    SCANNER --> SENTIMENT
+    
+    FUNDAMENTAL --> SIGNAL
+    TECHNICAL --> SIGNAL
+    SENTIMENT --> SIGNAL
+    
+    SIGNAL --> REPORT
+    
+    TOOLS -.-> COLLECTION_AGENTS
+    TOOLS -.-> ANALYSIS_AGENTS
+    TOOLS -.-> SYNTHESIS_AGENTS
+    
+    REPORT --> OUTPUT
+    OUTPUT --> USER
+    
+    %% Feedback loop
+    PORTFOLIO_DB -.-> SIGNAL
+
+    classDef configStyle fill:#2d3748,stroke:#4a5568,color:#e2e8f0
+    classDef dataStyle fill:#1a365d,stroke:#2d4a6f,color:#e2e8f0
+    classDef cacheStyle fill:#234e52,stroke:#2c7a7b,color:#e2e8f0
+    classDef agentStyle fill:#322659,stroke:#553c9a,color:#e2e8f0
+    classDef toolStyle fill:#744210,stroke:#b7791f,color:#e2e8f0
+    classDef outputStyle fill:#1a4731,stroke:#276749,color:#e2e8f0
+    classDef userStyle fill:#702459,stroke:#97266d,color:#e2e8f0
+
+    class CONFIG configStyle
+    class DATA_SOURCES,MARKET_DATA,NEWS_DATA,FILINGS dataStyle
+    class CACHE_LAYER cacheStyle
+    class CREWAI,COLLECTION_AGENTS,ANALYSIS_AGENTS,SYNTHESIS_AGENTS,OUTPUT_AGENTS agentStyle
+    class TOOLS toolStyle
+    class OUTPUT outputStyle
+    class USER userStyle
