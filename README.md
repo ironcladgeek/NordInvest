@@ -1,8 +1,7 @@
 # NordInvest
 
-AI-powered financial analysis and investment recommendation system using multi-agent AI orchestration (CrewAI). Analyzes Nordic and European markets to generate daily investment signals with confidence scores.
+AI-powered financial analysis and investment recommendation system using multi-agent AI orchestration (CrewAI). Analyzes global markets to generate daily investment signals with confidence scores.
 
-**Status:** Phase 5 complete (Integration, Testing & Polish). All core development completed ✅
 
 ## Quick Start
 
