@@ -1,2 +1,4 @@
 *.json
 *.jsonl
+*.md
+*.html
