@@ -2,15 +2,10 @@
 
 import math
 from datetime import datetime
-from typing import Any, Optional
-
-import pandas as pd
 
 from src.data.models import (
     FinancialStatement,
     InstrumentMetadata,
-    InstrumentType,
-    Market,
     NewsArticle,
     StockPrice,
 )

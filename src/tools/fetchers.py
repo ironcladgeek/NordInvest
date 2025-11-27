@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from src.cache.manager import CacheManager
-from src.data.models import StockPrice
 from src.data.providers import DataProviderFactory
 from src.tools.base import BaseTool
 from src.utils.logging import get_logger
