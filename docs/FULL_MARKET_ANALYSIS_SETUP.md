@@ -27,7 +27,7 @@ tickers = get_tickers_for_markets(["us"], limit=50)  # 50 US stocks
 
 ### 2. Run analysis
 ```bash
-uv run python -m src.main run
+uv run python -m src.main analyze
 ```
 
 That's it! The application will now analyze 50 US market instruments.
@@ -264,7 +264,7 @@ Check:
 crontab -e
 
 # Add (run daily at 8 AM UTC)
-0 8 * * * cd /Users/s0001860/Academy/Projects/NordInvest && uv run python -m src.main run
+0 8 * * * cd NordInvest && uv run python -m src.main analyze
 ```
 
 ### Archive reports
@@ -279,10 +279,10 @@ find data/reports -name "*.md" -mtime +30 -delete
 First run fetches all prices. Subsequent runs use cache:
 ```bash
 # First run (slow, populates cache)
-uv run python -m src.main run
+uv run python -m src.main analyze
 
 # Second run (fast, uses cache)
-uv run python -m src.main run
+uv run python -m src.main analyze
 ```
 
 Cache expires based on config:
@@ -308,7 +308,7 @@ data:
 
 1. ✅ **Read this document** - You're here!
 2. 📝 **Edit src/main.py** line 101 with ticker selection
-3. 🚀 **Run:** `uv run python -m src.main run`
+3. 🚀 **Run:** `uv run python -m src.main analyze`
 4. 📊 **Monitor:** Check logs and reports
 5. ⚙️ **Configure:** Adjust thresholds in config/local.yaml
 6. 🤖 **Automate:** Set up cron for daily runs

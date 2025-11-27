@@ -1,15 +1,13 @@
 """Abstract data provider interface and implementations."""
 
 from abc import ABC, abstractmethod
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
 from src.data.models import (
     AnalystRating,
     FinancialStatement,
     InstrumentMetadata,
-    InstrumentType,
-    Market,
     NewsArticle,
     StockPrice,
 )

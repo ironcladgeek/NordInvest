@@ -5,8 +5,6 @@ from functools import wraps
 from typing import Any, Callable, TypeVar
 
 from src.utils.errors import (
-    APIException,
-    RetryableException,
     is_retryable_error,
 )
 from src.utils.logging import get_logger

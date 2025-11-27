@@ -2,15 +2,10 @@
 
 import math
 from datetime import datetime
-from typing import Any, Optional
-
-import pandas as pd
 
 from src.data.models import (
     FinancialStatement,
     InstrumentMetadata,
-    InstrumentType,
-    Market,
     NewsArticle,
     StockPrice,
 )
@@ -322,7 +317,7 @@ class DataProcessor:
             except Exception as e:
                 logger.error(f"Error normalizing price {price.ticker}: {e}")
 
-        logger.info(f"Normalized {len(prices)} to {len(normalized)} valid prices")
+        logger.debug(f"Normalized {len(prices)} to {len(normalized)} valid prices")
         return normalized
 
     @staticmethod

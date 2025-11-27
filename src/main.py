@@ -25,7 +25,25 @@ logger = get_logger(__name__)
 
 
 @app.command()
-def run(
+def analyze(
+    market: str = typer.Option(
+        None,
+        "--market",
+        "-m",
+        help="Market to analyze: 'global', 'us', 'eu', 'nordic', or comma-separated (e.g., 'us,eu')",
+    ),
+    ticker: str = typer.Option(
+        None,
+        "--ticker",
+        "-t",
+        help="Comma-separated list of tickers to analyze (e.g., 'AAPL,MSFT,GOOGL')",
+    ),
+    limit: int = typer.Option(
+        None,
+        "--limit",
+        "-l",
+        help="Maximum number of instruments to analyze per market",
+    ),
     config: Path = typer.Option(
         None,
         "--config",
@@ -50,15 +68,44 @@ def run(
         help="Save report to disk",
     ),
 ) -> None:
-    """Run daily financial analysis and generate signals.
+    """Analyze markets and generate investment signals.
 
     Fetches market data, analyzes instruments, and generates investment
     recommendations with confidence scores.
+
+    Examples:
+        # Analyze all available markets
+        analyze --market global
+
+        # Analyze US market only
+        analyze --market us
+
+        # Analyze multiple markets with limit
+        analyze --market us,eu --limit 50
+
+        # Analyze specific tickers
+        analyze --ticker AAPL,MSFT,GOOGL
     """
     start_time = time.time()
     run_log = None
     signals_count = 0
-    error_occurred = False
+
+    # Validate that either market or ticker is provided
+    if not market and not ticker:
+        typer.echo(
+            "❌ Error: Either --market or --ticker must be provided\n"
+            "Examples:\n"
+            "  analyze --market global\n"
+            "  analyze --market us\n"
+            "  analyze --market us,eu --limit 50\n"
+            "  analyze --ticker AAPL,MSFT,GOOGL",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    if market and ticker:
+        typer.echo("❌ Error: Cannot specify both --market and --ticker", err=True)
+        raise typer.Exit(code=1)
 
     try:
         # Load configuration
@@ -74,8 +121,8 @@ def run(
         data_dir = Path("data")
         run_log = RunLog(data_dir / "runs.jsonl")
 
-        logger.info(f"Starting NordInvest analysis (dry_run={dry_run})")
-        logger.info(f"Using config: {config}")
+        logger.debug(f"Starting NordInvest analysis (dry_run={dry_run})")
+        logger.debug(f"Using config: {config}")
         logger.debug(f"Risk tolerance: {config_obj.risk.tolerance}")
         logger.debug(f"Capital: €{config_obj.capital.starting_capital_eur:,.2f}")
 
@@ -106,12 +153,39 @@ def run(
 
         pipeline = AnalysisPipeline(pipeline_config, cache_manager, portfolio_manager)
 
-        # Run analysis on sample tickers (for demonstration)
-        # tickers = ["AAPL", "MSFT", "GOOGL"][:2]  # Limit to 2 for testing
-        tickers = get_tickers_for_markets(["us"], limit=50)
-        typer.echo(f"\n📊 Running analysis on {len(tickers)} instruments...")
+        # Determine which tickers to analyze
+        if ticker:
+            # Parse comma-separated tickers
+            ticker_list = [t.strip().upper() for t in ticker.split(",")]
+            typer.echo(f"\n📊 Running analysis on {len(ticker_list)} specified instruments...")
+            typer.echo(f"  Tickers: {', '.join(ticker_list)}")
+        else:
+            # Parse market specification
+            if market.lower() == "global":
+                markets = ["nordic", "eu", "us"]
+                typer.echo("\n🌍 Running GLOBAL market analysis...")
+            else:
+                markets = [m.strip().lower() for m in market.split(",")]
+                typer.echo(f"\n📊 Running analysis for market(s): {', '.join(markets).upper()}...")
 
-        signals, portfolio_manager = pipeline.run_analysis(tickers)
+            # Validate markets
+            valid_markets = ["nordic", "eu", "us"]
+            invalid_markets = [m for m in markets if m not in valid_markets]
+            if invalid_markets:
+                typer.echo(
+                    f"❌ Error: Invalid market(s): {', '.join(invalid_markets)}\n"
+                    f"Valid markets: {', '.join(valid_markets)}, global",
+                    err=True,
+                )
+                raise typer.Exit(code=1)
+
+            ticker_list = get_tickers_for_markets(markets, limit=limit)
+
+            if limit:
+                typer.echo(f"  Limit: {limit} instruments per market")
+            typer.echo(f"  Total instruments to analyze: {len(ticker_list)}")
+
+        signals, portfolio_manager = pipeline.run_analysis(ticker_list)
         signals_count = len(signals)
 
         if signals:
@@ -125,7 +199,7 @@ def run(
             )
 
             # Display summary
-            typer.echo(f"\n📈 Report Summary:")
+            typer.echo("\n📈 Report Summary:")
             typer.echo(f"  Strong signals: {report.strong_signals_count}")
             typer.echo(f"  Moderate signals: {report.moderate_signals_count}")
             typer.echo(f"  Total analyzed: {report.total_signals_generated}")
@@ -161,7 +235,7 @@ def run(
             typer.echo("⚠️  No signals generated from analysis")
 
         duration = time.time() - start_time
-        logger.info(f"Analysis run completed successfully in {duration:.2f}s")
+        logger.debug(f"Analysis run completed successfully in {duration:.2f}s")
         typer.echo(f"\n✓ Analysis completed in {duration:.2f}s")
 
         # Log the run
@@ -173,7 +247,6 @@ def run(
             )
 
     except FileNotFoundError as e:
-        error_occurred = True
         logger.error(f"Configuration error: {e}")
         typer.echo(f"❌ Error: {e}", err=True)
         if run_log:
@@ -186,7 +259,6 @@ def run(
             )
         raise typer.Exit(code=1)
     except ValueError as e:
-        error_occurred = True
         logger.error(f"Configuration validation error: {e}")
         typer.echo(f"❌ Configuration error: {e}", err=True)
         if run_log:
@@ -199,7 +271,6 @@ def run(
             )
         raise typer.Exit(code=1)
     except Exception as e:
-        error_occurred = True
         logger.exception(f"Unexpected error during analysis run: {e}")
         typer.echo(f"❌ Error: {e}", err=True)
         if run_log:
@@ -241,15 +312,15 @@ def report(
         # Setup logging
         setup_logging(config_obj.logging)
 
-        logger.info(f"Generating report for date: {date}")
+        logger.debug(f"Generating report for date: {date}")
 
-        typer.echo(f"✓ Report configuration loaded")
+        typer.echo("✓ Report configuration loaded")
         if date:
             typer.echo(f"  Date: {date}")
         typer.echo(f"  Format: {config_obj.output.report_format}")
 
         # Phase 4+ implementation will add actual report generation here
-        logger.info("Report generation completed successfully")
+        logger.debug("Report generation completed successfully")
 
     except FileNotFoundError as e:
         logger.error(f"Configuration error: {e}")
@@ -298,7 +369,7 @@ def config_init(
         with open(output, "w") as f:
             f.write(default_content)
 
-        logger.info(f"Local configuration initialized: {output}")
+        logger.debug(f"Local configuration initialized: {output}")
         typer.echo(f"✓ Configuration template created: {output}")
         typer.echo("  Please edit this file with your preferences")
 

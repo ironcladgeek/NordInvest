@@ -223,7 +223,7 @@ class PortfolioState:
             entry_date=entry_date,
         )
         self.last_updated = datetime.now()
-        logger.info(f"Added position: {ticker} x{quantity} @ {entry_price}")
+        logger.debug(f"Added position: {ticker} x{quantity} @ {entry_price}")
         self._save()
 
     def remove_position(self, ticker: str) -> bool:
@@ -238,7 +238,7 @@ class PortfolioState:
         if ticker in self.positions:
             del self.positions[ticker]
             self.last_updated = datetime.now()
-            logger.info(f"Removed position: {ticker}")
+            logger.debug(f"Removed position: {ticker}")
             self._save()
             return True
         return False
@@ -273,7 +273,7 @@ class PortfolioState:
             target_price=target_price,
         )
         self.last_updated = datetime.now()
-        logger.info(f"Added to watchlist: {ticker}")
+        logger.debug(f"Added to watchlist: {ticker}")
         self._save()
 
     def remove_from_watchlist(self, ticker: str) -> bool:
@@ -288,7 +288,7 @@ class PortfolioState:
         if ticker in self.watchlist:
             del self.watchlist[ticker]
             self.last_updated = datetime.now()
-            logger.info(f"Removed from watchlist: {ticker}")
+            logger.debug(f"Removed from watchlist: {ticker}")
             self._save()
             return True
         return False
@@ -334,7 +334,7 @@ class PortfolioState:
     def _load(self) -> None:
         """Load state from file."""
         if not self.state_file.exists():
-            logger.info(f"No existing state file: {self.state_file}")
+            logger.debug(f"No existing state file: {self.state_file}")
             return
 
         try:
@@ -352,7 +352,7 @@ class PortfolioState:
             if data.get("last_updated"):
                 self.last_updated = datetime.fromisoformat(data["last_updated"])
 
-            logger.info(
+            logger.debug(
                 f"Loaded state: {len(self.positions)} positions, "
                 f"{len(self.watchlist)} watchlist items"
             )

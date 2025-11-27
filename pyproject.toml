@@ -40,5 +40,5 @@ ignore = ["G004"]
 # Poethepoet task definitions
 # Usage: uv run poe <task>
 [tool.poe.tasks]
-lint = "sh -c 'ruff check --select I --fix && ruff format && black .'"
+lint = "sh -c 'ruff check --select I --select F401 --fix && ruff format && black .'"
 pre-commit = "pre-commit run --all-files"

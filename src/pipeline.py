@@ -58,7 +58,7 @@ class AnalysisPipeline:
         # Check and log LLM configuration status
         llm_configured, provider = check_llm_configuration()
         if llm_configured:
-            logger.info(f"Analysis pipeline initialized with {provider} LLM")
+            logger.debug(f"Analysis pipeline initialized with {provider} LLM")
         else:
             logger.warning(
                 "Analysis pipeline initialized in RULE-BASED MODE. "
@@ -66,7 +66,7 @@ class AnalysisPipeline:
                 "Signals will be based on price patterns, indicators, and simple rules."
             )
 
-        logger.info("Analysis pipeline initialized")
+        logger.debug("Analysis pipeline initialized")
 
     def run_analysis(
         self,
@@ -85,7 +85,7 @@ class AnalysisPipeline:
         context = context or {}
         context["tickers"] = tickers
 
-        logger.info(f"Starting analysis pipeline for {len(tickers)} instruments")
+        logger.debug(f"Starting analysis pipeline for {len(tickers)} instruments")
 
         signals = []
 
@@ -109,7 +109,7 @@ class AnalysisPipeline:
                 if signal:
                     signals.append(signal)
 
-            logger.info(f"Generated {len(signals)} investment signals")
+            logger.debug(f"Generated {len(signals)} investment signals")
 
             # Phase 3: Generate portfolio allocation
             logger.debug("Phase 3: Generating portfolio allocation")
@@ -139,7 +139,7 @@ class AnalysisPipeline:
         Returns:
             Daily report object
         """
-        logger.info(f"Generating daily report with {len(signals)} signals")
+        logger.debug(f"Generating daily report with {len(signals)} signals")
 
         try:
             # Generate allocation if requested
@@ -160,7 +160,7 @@ class AnalysisPipeline:
                 report_date=report_date,
             )
 
-            logger.info(f"Report generated: {report.strong_signals_count} strong signals")
+            logger.debug(f"Report generated: {report.strong_signals_count} strong signals")
             return report
 
         except Exception as e:

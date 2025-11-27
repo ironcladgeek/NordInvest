@@ -111,10 +111,10 @@ Output:
 
 ```bash
 # Full analysis with fresh API calls
-uv run python -m src.main run --config config/local.yaml
+uv run python -m src.main analyze --config config/local.yaml
 
 # Dry run (no trades/alerts)
-uv run python -m src.main run --config config/local.yaml --dry-run
+uv run python -m src.main analyze --config config/local.yaml --dry-run
 ```
 
 ### Generate Reports
@@ -128,7 +128,7 @@ uv run python -m src.main report --date 2024-01-15
 
 ```bash
 uv run python -m src.main --help
-uv run python -m src.main run --help
+uv run python -m src.main analyze --help
 ```
 
 ## Development

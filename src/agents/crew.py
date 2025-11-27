@@ -5,13 +5,6 @@ from typing import Any, Optional
 from src.agents.analysis import FundamentalAnalysisAgent, TechnicalAnalysisAgent
 from src.agents.scanner import MarketScannerAgent
 from src.agents.sentiment import SentimentAgent, SignalSynthesisAgent
-from src.tools import (
-    NewsFetcherTool,
-    PriceFetcherTool,
-    ReportGeneratorTool,
-    SentimentAnalyzerTool,
-    TechnicalIndicatorTool,
-)
 from src.utils.llm_check import check_llm_configuration
 from src.utils.logging import get_logger
 
@@ -32,7 +25,7 @@ class AnalysisCrew:
         # Check LLM configuration and warn if using fallback
         llm_configured, provider = check_llm_configuration()
         if llm_configured:
-            logger.info(f"Analysis crew initialized with 5 agents using {provider} LLM")
+            logger.debug(f"Analysis crew initialized with 5 agents using {provider} LLM")
         else:
             logger.warning(
                 "Analysis crew initialized with 5 agents in RULE-BASED MODE. "
@@ -64,7 +57,7 @@ class AnalysisCrew:
             context = additional_context or {}
             context["ticker"] = ticker
 
-            logger.info(f"Starting comprehensive analysis for {ticker}")
+            logger.debug(f"Starting comprehensive analysis for {ticker}")
 
             # Execute parallel analyses
             technical_result = self.technical_agent.execute("Analyze technical indicators", context)
@@ -94,7 +87,7 @@ class AnalysisCrew:
                 "final_score": synthesis_result.get("final_score", 50),
             }
 
-            logger.info(
+            logger.debug(
                 f"Analysis complete for {ticker}: "
                 f"{result['final_recommendation']} "
                 f"(confidence: {result['confidence']:.0f}%)"
@@ -134,7 +127,7 @@ class AnalysisCrew:
             context = additional_context or {}
             context["tickers"] = tickers
 
-            logger.info(f"Starting market scan for {len(tickers)} instruments")
+            logger.debug(f"Starting market scan for {len(tickers)} instruments")
 
             # Execute market scan
             scan_result = self.market_scanner.execute("Scan market for anomalies", context)
@@ -148,7 +141,7 @@ class AnalysisCrew:
 
             # Analyze flagged instruments
             flagged = scan_result.get("instruments", [])
-            logger.info(f"Found {len(flagged)} instruments with anomalies")
+            logger.debug(f"Found {len(flagged)} instruments with anomalies")
 
             analysis_results = []
             for instrument in flagged:
