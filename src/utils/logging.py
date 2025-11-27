@@ -7,6 +7,9 @@ from loguru import logger
 
 from src.config.schemas import LoggingConfig
 
+# Remove default loguru handler to prevent premature logging during imports
+logger.remove()
+
 
 def setup_logging(config: LoggingConfig) -> None:
     """Configure logging based on configuration.
@@ -14,7 +17,7 @@ def setup_logging(config: LoggingConfig) -> None:
     Args:
         config: Logging configuration
     """
-    # Remove default handler
+    # Remove any existing handlers (defensive, should already be removed at module init)
     logger.remove()
 
     # Create logs directory if it doesn't exist
