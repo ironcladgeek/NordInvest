@@ -31,7 +31,7 @@ When no LLM is configured, the system automatically falls back to:
 The system provides clear warnings when running in fallback mode:
 
 ### CLI Warnings
-When you run `uv run python -m src.main run`, you'll see:
+When you run `uv run python -m src.main analyze`, you'll see:
 ```
 ⚠️  RULE-BASED MODE: No LLM configured.
    Analysis uses technical indicators and simple rules only.
@@ -85,7 +85,7 @@ To enable AI-powered analysis:
 
 3. Run the application - it will automatically detect and use the LLM:
    ```bash
-   uv run python -m src.main run
+   uv run python -m src.main analyze
    ```
 
 ## Checking LLM Status

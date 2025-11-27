@@ -40,7 +40,7 @@ tickers = get_tickers_for_markets(["nordic", "eu", "us"])
 ### Step 2: Run the analysis
 
 ```bash
-uv run python -m src.main run
+uv run python -m src.main analyze
 ```
 
 ## Configuration Options: config/local.yaml
@@ -154,7 +154,7 @@ Found instruments with:
 Make sure you're in the project root directory:
 ```bash
 cd /Users/s0001860/Academy/Projects/NordInvest
-uv run python -m src.main run
+uv run python -m src.main analyze
 ```
 
 ### "Analysis is too slow (>10 minutes for 100 tickers)"

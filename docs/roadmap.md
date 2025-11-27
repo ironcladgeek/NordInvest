@@ -496,7 +496,7 @@ export FINNHUB_API_KEY=your_key
 export OPENAI_API_KEY=your_key  # or ANTHROPIC_API_KEY
 
 # Run daily analysis
-python -m src.main run --config config/local.yaml
+python -m src.main analyze --config config/local.yaml
 
 # Generate report only (using cached data)
 python -m src.main report --date 2024-01-15

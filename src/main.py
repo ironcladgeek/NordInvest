@@ -25,7 +25,7 @@ logger = get_logger(__name__)
 
 
 @app.command()
-def run(
+def analyze(
     config: Path = typer.Option(
         None,
         "--config",
@@ -50,7 +50,7 @@ def run(
         help="Save report to disk",
     ),
 ) -> None:
-    """Run daily financial analysis and generate signals.
+    """Analyze markets and generate investment signals.
 
     Fetches market data, analyzes instruments, and generates investment
     recommendations with confidence scores.

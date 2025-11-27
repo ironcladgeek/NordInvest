@@ -255,7 +255,7 @@ tickers = [
 
 3. **Run:**
 ```bash
-uv run python -m src.main run --config config/local.yaml
+uv run python -m src.main analyze --config config/local.yaml
 ```
 
 ## Cost Considerations
