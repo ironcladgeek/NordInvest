@@ -196,6 +196,60 @@ class LoggingConfig(BaseModel):
         return v.upper()
 
 
+class LLMConfig(BaseModel):
+    """LLM provider and model configuration."""
+
+    provider: str = Field(
+        default="anthropic",
+        description="LLM provider: anthropic, openai, or local",
+    )
+    model: str = Field(
+        default="claude-3-5-sonnet-20241022",
+        description="Model identifier (e.g., claude-3-5-sonnet, gpt-4, etc.)",
+    )
+    temperature: float = Field(
+        default=0.7, ge=0.0, le=2.0, description="Temperature for generation (0.0-2.0)"
+    )
+    max_tokens: int = Field(
+        default=2000, ge=100, le=8000, description="Maximum tokens per response"
+    )
+    top_p: float = Field(
+        default=1.0, ge=0.0, le=1.0, description="Top-p (nucleus) sampling parameter"
+    )
+    timeout_seconds: int = Field(
+        default=60, ge=10, le=300, description="Request timeout in seconds"
+    )
+    enable_fallback: bool = Field(
+        default=True, description="Fall back to rule-based analysis on LLM failure"
+    )
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, v: str) -> str:
+        """Validate LLM provider."""
+        allowed = {"anthropic", "openai", "local"}
+        if v.lower() not in allowed:
+            raise ValueError(f"Provider must be one of {allowed}")
+        return v.lower()
+
+
+class TokenTrackerConfig(BaseModel):
+    """Token usage tracking and cost monitoring configuration."""
+
+    enabled: bool = Field(default=True, description="Enable token tracking")
+    daily_limit: int = Field(default=100000, ge=1000, description="Daily token usage limit")
+    monthly_limit: int = Field(default=1000000, ge=10000, description="Monthly token usage limit")
+    cost_per_1k_input_tokens: float = Field(
+        default=0.003, ge=0.0, description="Cost per 1k input tokens in EUR"
+    )
+    cost_per_1k_output_tokens: float = Field(
+        default=0.015, ge=0.0, description="Cost per 1k output tokens in EUR"
+    )
+    warn_on_daily_usage_percent: float = Field(
+        default=0.8, ge=0.1, le=1.0, description="Warn when daily usage reaches X%"
+    )
+
+
 class DeploymentConfig(BaseModel):
     """Deployment and scheduling settings."""
 
@@ -223,6 +277,12 @@ class Config(BaseModel):
     api: APIConfig = Field(default_factory=APIConfig, description="API settings")
     logging: LoggingConfig = Field(
         default_factory=LoggingConfig, description="Logging configuration"
+    )
+    llm: LLMConfig = Field(
+        default_factory=LLMConfig, description="LLM provider and model configuration"
+    )
+    token_tracker: TokenTrackerConfig = Field(
+        default_factory=TokenTrackerConfig, description="Token tracking and cost monitoring"
     )
     deployment: DeploymentConfig = Field(
         default_factory=DeploymentConfig, description="Deployment settings"
