@@ -1,6 +1,7 @@
 """NordInvest CLI interface."""
 
 import time
+from datetime import datetime
 from pathlib import Path
 
 import typer
@@ -141,15 +142,16 @@ def run(
             if save_report:
                 reports_dir = data_dir / "reports"
                 reports_dir.mkdir(parents=True, exist_ok=True)
+                timestamp = datetime.now().strftime("%H-%M-%S")
 
                 if output_format == "markdown":
-                    report_path = reports_dir / f"report_{report.report_date}.md"
+                    report_path = reports_dir / f"report_{report.report_date}_{timestamp}.md"
                     report_content = pipeline.report_generator.to_markdown(report)
                     with open(report_path, "w") as f:
                         f.write(report_content)
                     typer.echo(f"  Report saved: {report_path}")
                 else:
-                    report_path = reports_dir / f"report_{report.report_date}.json"
+                    report_path = reports_dir / f"report_{report.report_date}_{timestamp}.json"
                     import json
 
                     with open(report_path, "w") as f:
