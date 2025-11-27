@@ -13,6 +13,7 @@ from src.analysis import (
 )
 from src.cache.manager import CacheManager
 from src.data.portfolio import PortfolioState
+from src.utils.llm_check import check_llm_configuration
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -53,6 +54,17 @@ class AnalysisPipeline:
         self.report_generator = ReportGenerator(
             include_disclaimers=config.get("include_disclaimers", True)
         )
+
+        # Check and log LLM configuration status
+        llm_configured, provider = check_llm_configuration()
+        if llm_configured:
+            logger.info(f"Analysis pipeline initialized with {provider} LLM")
+        else:
+            logger.warning(
+                "Analysis pipeline initialized in RULE-BASED MODE. "
+                "Using technical indicators and quantitative analysis without LLM. "
+                "Signals will be based on price patterns, indicators, and simple rules."
+            )
 
         logger.info("Analysis pipeline initialized")
 

@@ -10,6 +10,7 @@ from src.config import load_config
 from src.data.portfolio import PortfolioState
 from src.MARKET_TICKERS import get_tickers_for_markets
 from src.pipeline import AnalysisPipeline
+from src.utils.llm_check import get_fallback_warning_message, log_llm_status
 from src.utils.logging import get_logger, setup_logging
 from src.utils.scheduler import RunLog
 
@@ -65,6 +66,9 @@ def run(
         # Setup logging
         setup_logging(config_obj.logging)
 
+        # Check LLM configuration and warn if using fallback mode
+        llm_configured = log_llm_status()
+
         # Initialize run log
         data_dir = Path("data")
         run_log = RunLog(data_dir / "runs.jsonl")
@@ -79,6 +83,9 @@ def run(
         typer.echo(f"  Capital: €{config_obj.capital.starting_capital_eur:,.2f}")
         typer.echo(f"  Monthly deposit: €{config_obj.capital.monthly_deposit_eur:,.2f}")
         typer.echo(f"  Markets: {', '.join(config_obj.markets.included)}")
+
+        if not llm_configured:
+            typer.echo("\n" + get_fallback_warning_message())
 
         if dry_run:
             typer.echo("  [DRY RUN MODE - No trades will be executed]")
