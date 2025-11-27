@@ -200,7 +200,7 @@ class SentimentAnalyzerTool(BaseTool):
 
             for article in articles:
                 sentiment = article.get("sentiment", "neutral")
-                score = article.get("sentiment_score", 0)
+                score = article.get("sentiment_score", 0) or 0
 
                 if sentiment == "positive":
                     positive += 1
