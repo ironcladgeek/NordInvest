@@ -153,7 +153,7 @@ Found instruments with:
 ### "ModuleNotFoundError: No module named 'src.MARKET_TICKERS'"
 Make sure you're in the project root directory:
 ```bash
-cd /Users/s0001860/Academy/Projects/NordInvest
+cd NordInvest
 uv run python -m src.main analyze
 ```
 

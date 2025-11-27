@@ -264,7 +264,7 @@ Check:
 crontab -e
 
 # Add (run daily at 8 AM UTC)
-0 8 * * * cd /Users/s0001860/Academy/Projects/NordInvest && uv run python -m src.main analyze
+0 8 * * * cd NordInvest && uv run python -m src.main analyze
 ```
 
 ### Archive reports
