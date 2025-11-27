@@ -2,6 +2,7 @@
 
 from datetime import datetime
 
+import pandas as pd
 import yfinance as yf
 
 from src.data.models import InstrumentType, Market, StockPrice
@@ -62,8 +63,9 @@ class YahooFinanceProvider(DataProvider):
             prices = []
             for index, row in data.iterrows():
                 # Get adjusted close price if available, otherwise use close price
+                adj_close_val = row.get("Adj Close") if "Adj Close" in row else row["Close"]
                 adjusted_close = (
-                    float(row["Adj Close"]) if "Adj Close" in row else float(row["Close"])
+                    float(adj_close_val) if pd.notna(adj_close_val) else float(row["Close"])
                 )
 
                 price = StockPrice(
