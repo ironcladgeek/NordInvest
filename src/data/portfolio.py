@@ -273,7 +273,7 @@ class PortfolioState:
             target_price=target_price,
         )
         self.last_updated = datetime.now()
-        logger.info(f"Added to watchlist: {ticker}")
+        logger.debug(f"Added to watchlist: {ticker}")
         self._save()
 
     def remove_from_watchlist(self, ticker: str) -> bool:
@@ -334,7 +334,7 @@ class PortfolioState:
     def _load(self) -> None:
         """Load state from file."""
         if not self.state_file.exists():
-            logger.info(f"No existing state file: {self.state_file}")
+            logger.debug(f"No existing state file: {self.state_file}")
             return
 
         try:
@@ -352,7 +352,7 @@ class PortfolioState:
             if data.get("last_updated"):
                 self.last_updated = datetime.fromisoformat(data["last_updated"])
 
-            logger.info(
+            logger.debug(
                 f"Loaded state: {len(self.positions)} positions, "
                 f"{len(self.watchlist)} watchlist items"
             )

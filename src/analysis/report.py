@@ -37,7 +37,7 @@ class ReportGenerator:
             include_disclaimers: Whether to include legal disclaimers
         """
         self.include_disclaimers = include_disclaimers
-        logger.info("Report generator initialized")
+        logger.debug("Report generator initialized")
 
     def generate_daily_report(
         self,
@@ -102,7 +102,7 @@ class ReportGenerator:
             next_update=self._calculate_next_update(report_date),
         )
 
-        logger.info(
+        logger.debug(
             f"Report generated for {report_date}: {len(strong_signals)} strong signals, "
             f"{len(moderate_signals)} moderate signals"
         )

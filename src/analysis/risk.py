@@ -28,7 +28,7 @@ class RiskAssessor:
         self.volatility_threshold_very_high = volatility_threshold_very_high
         self.liquidity_threshold_illiquid = liquidity_threshold_illiquid
 
-        logger.info(
+        logger.debug(
             f"Risk assessor initialized: high_vol={volatility_threshold_high}%, "
             f"very_high_vol={volatility_threshold_very_high}%"
         )

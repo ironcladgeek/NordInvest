@@ -35,7 +35,7 @@ class AllocationEngine:
         self.max_sector_concentration_pct = max_sector_concentration_pct
         self.min_diversification_score = min_diversification_score
 
-        logger.info(
+        logger.debug(
             f"Allocation engine initialized: capital={total_capital}€, "
             f"monthly_deposit={monthly_deposit}€"
         )
@@ -60,7 +60,7 @@ class AllocationEngine:
         allocated_capital = sum(pos.get("value", 0) for pos in existing_positions.values())
         available_for_allocation = max(0, self.total_capital - allocated_capital)
 
-        logger.info(
+        logger.debug(
             f"Allocating from {available_for_allocation}€ available capital "
             f"({allocated_capital}€ already allocated)"
         )
@@ -189,7 +189,7 @@ class AllocationEngine:
             generated_at=datetime.now(),
         )
 
-        logger.info(
+        logger.debug(
             f"Allocation complete: {len(suggested_positions)} positions, "
             f"{allocation.total_allocated_pct}% allocated, "
             f"diversification score: {diversification_score:.0f}"

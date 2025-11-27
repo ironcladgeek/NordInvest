@@ -2,6 +2,8 @@
 
 from typing import Any
 
+import typer
+
 from src.agents.base import AgentConfig, BaseAgent
 from src.tools.fetchers import PriceFetcherTool
 from src.utils.logging import get_logger
@@ -51,7 +53,7 @@ class MarketScannerAgent(BaseAgent):
                     "instruments": [],
                 }
 
-            logger.info(f"Scanning {len(tickers)} instruments for anomalies")
+            logger.debug(f"Scanning {len(tickers)} instruments for anomalies")
 
             scanned_instruments = []
 
@@ -68,32 +70,35 @@ class MarketScannerAgent(BaseAgent):
                     "instruments": [],
                 }
 
-            # Scan each ticker
-            for ticker in tickers:
-                result = price_fetcher.run(ticker, days_back=30)
+            # Scan each ticker with progress bar
+            with typer.progressbar(
+                tickers, label="🔍 Scanning instruments", show_pos=True, show_percent=True
+            ) as progress:
+                for ticker in progress:
+                    result = price_fetcher.run(ticker, days_back=30)
 
-                if "error" in result:
-                    logger.debug(f"Error scanning {ticker}: {result['error']}")
-                    continue
+                    if "error" in result:
+                        logger.debug(f"Error scanning {ticker}: {result['error']}")
+                        continue
 
-                prices = result.get("prices", [])
-                if len(prices) < 5:
-                    continue
+                    prices = result.get("prices", [])
+                    if len(prices) < 5:
+                        continue
 
-                # Analyze for anomalies
-                anomalies = self._detect_anomalies(ticker, prices)
+                    # Analyze for anomalies
+                    anomalies = self._detect_anomalies(ticker, prices)
 
-                if anomalies:
-                    scanned_instruments.append(
-                        {
-                            "ticker": ticker,
-                            "latest_price": result.get("latest_price"),
-                            "anomalies": anomalies,
-                            "requires_analysis": True,
-                        }
-                    )
+                    if anomalies:
+                        scanned_instruments.append(
+                            {
+                                "ticker": ticker,
+                                "latest_price": result.get("latest_price"),
+                                "anomalies": anomalies,
+                                "requires_analysis": True,
+                            }
+                        )
 
-            logger.info(f"Found {len(scanned_instruments)} instruments with anomalies")
+            logger.debug(f"Found {len(scanned_instruments)} instruments with anomalies")
 
             return {
                 "status": "success",

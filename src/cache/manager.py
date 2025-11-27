@@ -59,7 +59,7 @@ class CacheManager:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._memory_cache = {}
-        logger.info(f"Cache manager initialized at {self.cache_dir}")
+        logger.debug(f"Cache manager initialized at {self.cache_dir}")
 
     def get(
         self,
