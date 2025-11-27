@@ -64,7 +64,7 @@ class CronScheduler:
         self.config_path = Path(config_path)
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"Cron scheduler initialized: {config_path}")
+        logger.debug(f"Cron scheduler initialized: {config_path}")
 
     def schedule_daily_run(
         self,
@@ -85,7 +85,7 @@ class CronScheduler:
         try:
             hour, minute = map(int, time_of_day.split(":"))
             cron_expr = f"{minute} {hour} * * *"
-            logger.info(f"Daily cron expression: {cron_expr} ({timezone})")
+            logger.debug(f"Daily cron expression: {cron_expr} ({timezone})")
             return cron_expr
         except (ValueError, AttributeError) as e:
             logger.error(f"Invalid time format: {e}")
@@ -110,7 +110,7 @@ class CronScheduler:
         try:
             hour, minute = map(int, time_of_day.split(":"))
             cron_expr = f"{minute} {hour} * * {day_of_week}"
-            logger.info(f"Weekly cron expression: {cron_expr}")
+            logger.debug(f"Weekly cron expression: {cron_expr}")
             return cron_expr
         except (ValueError, AttributeError) as e:
             logger.error(f"Invalid time format: {e}")
@@ -176,7 +176,7 @@ class CronScheduler:
             )
 
             if result.returncode == 0:
-                logger.info(f"Cron job installed: {cron_expr}")
+                logger.debug(f"Cron job installed: {cron_expr}")
                 return True
             else:
                 logger.error(f"Cron installation failed: {result.stderr}")
@@ -246,7 +246,7 @@ class CronScheduler:
             )
 
             if result.returncode == 0:
-                logger.info(f"Cron job removed: {cron_expr}")
+                logger.debug(f"Cron job removed: {cron_expr}")
                 return True
             else:
                 logger.error(f"Cron removal failed: {result.stderr}")
@@ -269,7 +269,7 @@ class RunLog:
         self.log_path = Path(log_path)
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"Run log initialized: {log_path}")
+        logger.debug(f"Run log initialized: {log_path}")
 
     def log_run(
         self,
@@ -303,7 +303,7 @@ class RunLog:
                 f.write(json.dumps(run_entry) + "\n")
 
             status = "SUCCESS" if success else "FAILED"
-            logger.info(f"Run logged: {status} ({duration_seconds:.2f}s, {signal_count} signals)")
+            logger.debug(f"Run logged: {status} ({duration_seconds:.2f}s, {signal_count} signals)")
 
         except Exception as e:
             logger.error(f"Error logging run: {e}")
@@ -378,7 +378,7 @@ class RunLog:
                                     out_f.write(line)
                                     exported_count += 1
 
-            logger.info(f"Exported {exported_count} log entries to {export_path}")
+            logger.debug(f"Exported {exported_count} log entries to {export_path}")
             return True
 
         except Exception as e:

@@ -90,7 +90,7 @@ class PriceFetcherTool(BaseTool):
             return result
 
         except Exception as e:
-            logger.error(f"Error fetching prices for {ticker}: {e}")
+            logger.debug(f"Error fetching prices for {ticker}: {e}")
             return {
                 "ticker": ticker,
                 "prices": [],

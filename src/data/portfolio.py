@@ -223,7 +223,7 @@ class PortfolioState:
             entry_date=entry_date,
         )
         self.last_updated = datetime.now()
-        logger.info(f"Added position: {ticker} x{quantity} @ {entry_price}")
+        logger.debug(f"Added position: {ticker} x{quantity} @ {entry_price}")
         self._save()
 
     def remove_position(self, ticker: str) -> bool:
@@ -238,7 +238,7 @@ class PortfolioState:
         if ticker in self.positions:
             del self.positions[ticker]
             self.last_updated = datetime.now()
-            logger.info(f"Removed position: {ticker}")
+            logger.debug(f"Removed position: {ticker}")
             self._save()
             return True
         return False
@@ -288,7 +288,7 @@ class PortfolioState:
         if ticker in self.watchlist:
             del self.watchlist[ticker]
             self.last_updated = datetime.now()
-            logger.info(f"Removed from watchlist: {ticker}")
+            logger.debug(f"Removed from watchlist: {ticker}")
             self._save()
             return True
         return False

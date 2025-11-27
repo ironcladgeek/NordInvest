@@ -73,7 +73,7 @@ class MarketScannerAgent(BaseAgent):
                 result = price_fetcher.run(ticker, days_back=30)
 
                 if "error" in result:
-                    logger.warning(f"Error scanning {ticker}: {result['error']}")
+                    logger.debug(f"Error scanning {ticker}: {result['error']}")
                     continue
 
                 prices = result.get("prices", [])

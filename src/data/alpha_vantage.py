@@ -51,7 +51,7 @@ class AlphaVantageProvider(DataProvider):
         self.is_available = bool(self.api_key)
 
         if self.is_available:
-            logger.info("Alpha Vantage provider initialized")
+            logger.debug("Alpha Vantage provider initialized")
         else:
             logger.warning("Alpha Vantage API key not found. Set ALPHA_VANTAGE_API_KEY env var.")
 
@@ -225,7 +225,7 @@ class AlphaVantageProvider(DataProvider):
                 logger.warning(f"Request timeout on attempt {attempt + 1}")
                 if attempt < self.max_retries - 1:
                     wait_time = self.backoff_factor**attempt
-                    logger.info(f"Retrying in {wait_time}s...")
+                    logger.debug(f"Retrying in {wait_time}s...")
                     time.sleep(wait_time)
                 else:
                     raise RuntimeError("API call failed after retries (timeout)")
@@ -234,7 +234,7 @@ class AlphaVantageProvider(DataProvider):
                 logger.warning(f"Request error on attempt {attempt + 1}: {e}")
                 if attempt < self.max_retries - 1:
                     wait_time = self.backoff_factor**attempt
-                    logger.info(f"Retrying in {wait_time}s...")
+                    logger.debug(f"Retrying in {wait_time}s...")
                     time.sleep(wait_time)
                 else:
                     raise RuntimeError(f"API call failed after retries: {e}")

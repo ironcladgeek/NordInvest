@@ -123,7 +123,7 @@ class InstrumentScreener:
             if InstrumentScreener.screen_price(price, criteria):
                 filtered.append(price)
 
-        logger.info(f"Filtered {len(prices)} prices to {len(filtered)} instruments")
+        logger.debug(f"Filtered {len(prices)} prices to {len(filtered)} instruments")
         return filtered
 
     @staticmethod
@@ -145,7 +145,9 @@ class InstrumentScreener:
             if InstrumentScreener.screen_instrument(instrument, criteria):
                 filtered.append(instrument)
 
-        logger.info(f"Filtered {len(instruments)} instruments to {len(filtered)} matching criteria")
+        logger.debug(
+            f"Filtered {len(instruments)} instruments to {len(filtered)} matching criteria"
+        )
         return filtered
 
     @staticmethod

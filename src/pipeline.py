@@ -139,7 +139,7 @@ class AnalysisPipeline:
         Returns:
             Daily report object
         """
-        logger.info(f"Generating daily report with {len(signals)} signals")
+        logger.debug(f"Generating daily report with {len(signals)} signals")
 
         try:
             # Generate allocation if requested

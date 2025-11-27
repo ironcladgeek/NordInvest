@@ -42,7 +42,7 @@ class FinnhubProvider(DataProvider):
         self.is_available = bool(self.api_key)
 
         if self.is_available:
-            logger.info("Finnhub provider initialized")
+            logger.debug("Finnhub provider initialized")
         else:
             logger.warning("Finnhub API key not found. Set FINNHUB_API_KEY env var.")
 

@@ -23,7 +23,7 @@ class YahooFinanceProvider(DataProvider):
         """Initialize Yahoo Finance provider."""
         super().__init__("yahoo_finance")
         self.is_available = True
-        logger.info("Yahoo Finance provider initialized")
+        logger.debug("Yahoo Finance provider initialized")
 
     def get_stock_prices(
         self,

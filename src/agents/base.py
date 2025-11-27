@@ -37,7 +37,7 @@ class BaseAgent(ABC):
         self.config = config
         self.tools = tools or []
         self.memory = {} if config.memory else None
-        logger.info(f"Initialized agent: {config.role}")
+        logger.debug(f"Initialized agent: {config.role}")
 
     @property
     def role(self) -> str:

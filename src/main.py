@@ -121,8 +121,8 @@ def analyze(
         data_dir = Path("data")
         run_log = RunLog(data_dir / "runs.jsonl")
 
-        logger.info(f"Starting NordInvest analysis (dry_run={dry_run})")
-        logger.info(f"Using config: {config}")
+        logger.debug(f"Starting NordInvest analysis (dry_run={dry_run})")
+        logger.debug(f"Using config: {config}")
         logger.debug(f"Risk tolerance: {config_obj.risk.tolerance}")
         logger.debug(f"Capital: €{config_obj.capital.starting_capital_eur:,.2f}")
 
@@ -235,7 +235,7 @@ def analyze(
             typer.echo("⚠️  No signals generated from analysis")
 
         duration = time.time() - start_time
-        logger.info(f"Analysis run completed successfully in {duration:.2f}s")
+        logger.debug(f"Analysis run completed successfully in {duration:.2f}s")
         typer.echo(f"\n✓ Analysis completed in {duration:.2f}s")
 
         # Log the run
@@ -312,7 +312,7 @@ def report(
         # Setup logging
         setup_logging(config_obj.logging)
 
-        logger.info(f"Generating report for date: {date}")
+        logger.debug(f"Generating report for date: {date}")
 
         typer.echo("✓ Report configuration loaded")
         if date:
@@ -320,7 +320,7 @@ def report(
         typer.echo(f"  Format: {config_obj.output.report_format}")
 
         # Phase 4+ implementation will add actual report generation here
-        logger.info("Report generation completed successfully")
+        logger.debug("Report generation completed successfully")
 
     except FileNotFoundError as e:
         logger.error(f"Configuration error: {e}")
@@ -369,7 +369,7 @@ def config_init(
         with open(output, "w") as f:
             f.write(default_content)
 
-        logger.info(f"Local configuration initialized: {output}")
+        logger.debug(f"Local configuration initialized: {output}")
         typer.echo(f"✓ Configuration template created: {output}")
         typer.echo("  Please edit this file with your preferences")
 
