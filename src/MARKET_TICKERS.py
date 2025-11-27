@@ -5,7 +5,7 @@ This file contains curated lists of tickers for different markets
 that can be used to run analysis across the full market.
 
 Usage:
-    from MARKET_TICKERS import get_tickers_for_markets
+    from src.MARKET_TICKERS import get_tickers_for_markets
 
     # Get tickers for Nordic and EU markets
     tickers = get_tickers_for_markets(["nordic", "eu"])
@@ -247,7 +247,6 @@ US_TICKERS = [
     "NXPI",
     "STX",
     "WDC",
-    "XLNX",
     "ASGN",
     "CRWD",
     "CSCO",

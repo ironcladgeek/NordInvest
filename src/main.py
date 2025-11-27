@@ -5,10 +5,10 @@ from pathlib import Path
 
 import typer
 
-from MARKET_TICKERS import get_tickers_for_markets
 from src.cache.manager import CacheManager
 from src.config import load_config
 from src.data.portfolio import PortfolioState
+from src.MARKET_TICKERS import get_tickers_for_markets
 from src.pipeline import AnalysisPipeline
 from src.utils.logging import get_logger, setup_logging
 from src.utils.scheduler import RunLog

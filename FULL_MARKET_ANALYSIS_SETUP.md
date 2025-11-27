@@ -21,7 +21,7 @@ tickers = ["AAPL", "MSFT", "GOOGL"][:2]
 
 With:
 ```python
-from MARKET_TICKERS import get_tickers_for_markets
+from src.MARKET_TICKERS import get_tickers_for_markets
 tickers = get_tickers_for_markets(["us"], limit=50)  # 50 US stocks
 ```
 
@@ -66,7 +66,7 @@ tickers = get_tickers_for_markets(["us", "eu"], limit=25)
 
 **Custom Selection**
 ```python
-from MARKET_TICKERS import US_TICKERS, EU_TICKERS
+from src.MARKET_TICKERS import US_TICKERS, EU_TICKERS
 tickers = US_TICKERS[:50] + EU_TICKERS[:20]  # 70 instruments
 ```
 
@@ -203,7 +203,7 @@ ls -la data/reports/
 
 ### Add your own stocks to the database
 
-Edit `MARKET_TICKERS.py`:
+Edit `src.MARKET_TICKERS.py`:
 
 ```python
 # Add new custom market
@@ -297,7 +297,7 @@ data:
 
 | File | Purpose |
 |------|---------|
-| `MARKET_TICKERS.py` | 388 global instruments database |
+| `src.MARKET_TICKERS.py` | 388 global instruments database |
 | `QUICK_START_FULL_MARKET.md` | Quick setup guide (5 minutes) |
 | `MARKET_CONFIG_GUIDE.md` | Detailed configuration options |
 | `src/main.py` | CLI entry point (modify line 101 for tickers) |

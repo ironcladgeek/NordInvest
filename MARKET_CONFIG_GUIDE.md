@@ -177,7 +177,7 @@ Replace the hardcoded list with a larger curated list:
 
 ```python
 # In src/main.py
-MARKET_TICKERS = {
+src.MARKET_TICKERS = {
     "nordic": ["AAPL.ST", "NOVOB.ST", "VOLV.B", ...],  # ~50
     "eu": ["SAP.DE", "ASML.AS", "LHYFE.PA", ...],      # ~100
     "us": ["AAPL", "MSFT", "GOOGL", "AMZN", ...],      # ~500
@@ -187,8 +187,8 @@ def get_tickers_for_markets(markets: list[str]) -> list[str]:
     """Get ticker list based on configured markets"""
     tickers = []
     for market in markets:
-        if market in MARKET_TICKERS:
-            tickers.extend(MARKET_TICKERS[market])
+        if market in src.MARKET_TICKERS:
+            tickers.extend(src.MARKET_TICKERS[market])
     return tickers
 ```
 

@@ -15,7 +15,7 @@ tickers = ["AAPL", "MSFT", "GOOGL"][:2]  # Limit to 2 for testing
 
 **After (Option A - US Market, 50 instruments):**
 ```python
-from MARKET_TICKERS import get_tickers_for_markets
+from src.MARKET_TICKERS import get_tickers_for_markets
 
 # Run analysis on 50 US instruments
 tickers = get_tickers_for_markets(["us"], limit=50)
@@ -23,7 +23,7 @@ tickers = get_tickers_for_markets(["us"], limit=50)
 
 **After (Option B - Nordic & EU, 30 instruments):**
 ```python
-from MARKET_TICKERS import get_tickers_for_markets
+from src.MARKET_TICKERS import get_tickers_for_markets
 
 # Run analysis on Nordic and EU markets
 tickers = get_tickers_for_markets(["nordic", "eu"], limit=30)
@@ -31,7 +31,7 @@ tickers = get_tickers_for_markets(["nordic", "eu"], limit=30)
 
 **After (Option C - All Available Markets):**
 ```python
-from MARKET_TICKERS import get_tickers_for_markets
+from src.MARKET_TICKERS import get_tickers_for_markets
 
 # Run analysis on all available instruments
 tickers = get_tickers_for_markets(["nordic", "eu", "us"])
@@ -150,7 +150,7 @@ Found instruments with:
 
 ## Troubleshooting
 
-### "ModuleNotFoundError: No module named 'MARKET_TICKERS'"
+### "ModuleNotFoundError: No module named 'src.MARKET_TICKERS'"
 Make sure you're in the project root directory:
 ```bash
 cd /Users/s0001860/Academy/Projects/NordInvest
@@ -182,10 +182,10 @@ Estimated costs:
 
 ## Advanced: Custom Ticker Lists
 
-Create your own ticker list in `MARKET_TICKERS.py`:
+Create your own ticker list in `src.MARKET_TICKERS.py`:
 
 ```python
-# Add to MARKET_TICKERS.py
+# Add to src.MARKET_TICKERS.py
 MY_CUSTOM_TICKERS = [
     "AAPL", "MSFT", "GOOGL",  # US
     "SAP.DE", "ASML.AS",       # EU
@@ -199,7 +199,7 @@ def get_my_tickers():
 Then use in `src/main.py`:
 
 ```python
-from MARKET_TICKERS import get_my_tickers
+from src.MARKET_TICKERS import get_my_tickers
 
 tickers = get_my_tickers()
 ```
@@ -228,7 +228,7 @@ tickers = get_my_tickers()
 
 ## Key Files
 
-- `MARKET_TICKERS.py` - Ticker database (edit to customize)
+- `src.MARKET_TICKERS.py` - Ticker database (edit to customize)
 - `config/local.yaml` - Market configuration
 - `src/main.py` - Entry point (line 101 controls tickers)
 - `MARKET_CONFIG_GUIDE.md` - Detailed configuration guide
