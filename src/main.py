@@ -365,7 +365,7 @@ def analyze(
         setup_logging(config_obj.logging)
 
         # Check LLM configuration and warn if using fallback mode
-        llm_configured = log_llm_status()
+        llm_configured = log_llm_status(config_obj.llm.provider)
 
         # Initialize run log
         data_dir = Path("data")
@@ -383,7 +383,9 @@ def analyze(
         typer.echo(f"  Markets: {', '.join(config_obj.markets.included)}")
 
         if not llm_configured:
-            typer.echo("\n" + get_fallback_warning_message())
+            typer.echo(
+                "\n" + get_fallback_warning_message(config_obj.llm.provider if use_llm else None)
+            )
 
         if dry_run:
             typer.echo("  [DRY RUN MODE - No trades will be executed]")
