@@ -129,6 +129,134 @@ class PriceFetcherTool(BaseTool):
             return {"ticker": ticker, "error": str(e)}
 
 
+class FinancialDataFetcherTool(BaseTool):
+    """Tool for fetching fundamental data using free tier endpoints only.
+
+    Uses Finnhub free tier endpoints:
+    - /stock/profile2 (company info)
+    - /news-sentiment (sentiment analysis)
+    - /stock/recommendation-trend (analyst ratings)
+    - Yahoo Finance (price data)
+    """
+
+    def __init__(self, cache_manager: CacheManager = None):
+        """Initialize financial data fetcher.
+
+        Args:
+            cache_manager: Optional cache manager for caching data
+        """
+        super().__init__(
+            name="FinancialDataFetcher",
+            description=(
+                "Fetch fundamental data using free tier APIs only. "
+                "Input: ticker symbol. "
+                "Output: Dictionary with analyst consensus, sentiment, and price context."
+            ),
+        )
+        self.cache_manager = cache_manager or CacheManager()
+        self.finnhub_provider = DataProviderFactory.create("finnhub")
+        self.price_provider = DataProviderFactory.create("yahoo_finance")
+
+    def run(self, ticker: str) -> dict[str, Any]:
+        """Fetch fundamental data for ticker (free tier only).
+
+        Args:
+            ticker: Stock ticker symbol
+
+        Returns:
+            Dictionary with analyst data, sentiment, and price context
+        """
+        try:
+            # Check cache first
+            cache_key = f"fundamental_freetier:{ticker}"
+            cached = self.cache_manager.get(cache_key)
+            if cached:
+                logger.debug(f"Cache hit for {ticker} fundamental data")
+                return cached
+
+            if not self.finnhub_provider.is_available:
+                return {
+                    "ticker": ticker,
+                    "analyst_data": {},
+                    "sentiment": {},
+                    "price_context": {},
+                    "error": "Finnhub provider not available",
+                }
+
+            logger.debug(f"Fetching fundamental data for {ticker} (free tier only)")
+
+            # Fetch analyst recommendations
+            analyst_data = self.finnhub_provider.get_recommendation_trends(ticker)
+
+            # Fetch news sentiment
+            sentiment = self.finnhub_provider.get_news_sentiment(ticker)
+
+            # Fetch price context for momentum
+            price_context = self._get_price_context(ticker)
+
+            result = {
+                "ticker": ticker,
+                "analyst_data": analyst_data or {},
+                "sentiment": sentiment or {},
+                "price_context": price_context or {},
+                "timestamp": datetime.now().isoformat(),
+            }
+            self.cache_manager.set(cache_key, result, ttl_hours=4)  # Shorter cache for sentiment
+
+            return result
+
+        except Exception as e:
+            logger.debug(f"Error fetching fundamental data for {ticker}: {e}")
+            return {
+                "ticker": ticker,
+                "analyst_data": {},
+                "sentiment": {},
+                "price_context": {},
+                "error": str(e),
+            }
+
+    def _get_price_context(self, ticker: str) -> dict[str, Any]:
+        """Get price momentum context from price data.
+
+        Args:
+            ticker: Stock ticker symbol
+
+        Returns:
+            Dictionary with change_percent and trend
+        """
+        try:
+            # Get last 30 days of price data
+            prices = self.price_provider.get_stock_prices(
+                ticker, start_date=datetime.now() - timedelta(days=30), end_date=datetime.now()
+            )
+
+            if len(prices) < 2:
+                return {"change_percent": 0, "trend": "neutral"}
+
+            # Calculate recent change
+            earliest_price = prices[0].close_price
+            latest_price = prices[-1].close_price
+            change_percent = (
+                (latest_price - earliest_price) / earliest_price if earliest_price > 0 else 0
+            )
+
+            # Determine trend (simple: positive = bullish, negative = bearish)
+            trend = (
+                "bullish" if change_percent > 0 else "bearish" if change_percent < 0 else "neutral"
+            )
+
+            return {
+                "change_percent": change_percent,
+                "trend": trend,
+                "latest_price": latest_price,
+                "period_days": 30,
+            }
+
+        except Exception as e:
+            logger.debug(f"Error getting price context for {ticker}: {e}")
+            return {"change_percent": 0, "trend": "neutral"}
+
+
 class NewsFetcherTool(BaseTool):
     """Tool for fetching news articles."""
 

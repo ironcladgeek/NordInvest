@@ -3,8 +3,9 @@
 from typing import Any
 
 from src.agents.base import AgentConfig, BaseAgent
+from src.analysis.fundamental import FundamentalAnalyzer
 from src.tools.analysis import TechnicalIndicatorTool
-from src.tools.fetchers import PriceFetcherTool
+from src.tools.fetchers import FinancialDataFetcherTool, PriceFetcherTool
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -216,7 +217,8 @@ class FundamentalAnalysisAgent(BaseAgent):
                 "companies with strong business models and reasonable prices."
             ),
         )
-        super().__init__(config, tools or [])
+        default_tools = [FinancialDataFetcherTool()]
+        super().__init__(config, tools or default_tools)
 
     def execute(self, task: str, context: dict[str, Any] = None) -> dict[str, Any]:
         """Execute fundamental analysis.
@@ -241,20 +243,66 @@ class FundamentalAnalysisAgent(BaseAgent):
 
             logger.debug(f"Analyzing fundamentals for {ticker}")
 
-            # This is a simplified implementation
-            # In production, this would fetch real financial data
-            score = self._calculate_fundamental_score(context)
+            # Get financial data fetcher tool
+            fetcher = next(
+                (t for t in self.tools if hasattr(t, "name") and t.name == "FinancialDataFetcher"),
+                None,
+            )
+
+            if not fetcher:
+                return {
+                    "status": "error",
+                    "message": "Financial data fetcher unavailable",
+                    "fundamental_score": 0,
+                }
+
+            # Fetch fundamental data (free tier only)
+            fundamental_data = fetcher.run(ticker)
+
+            if "error" in fundamental_data:
+                return {
+                    "status": "error",
+                    "message": fundamental_data["error"],
+                    "fundamental_score": 0,
+                }
+
+            # Extract data sources from free tier endpoints
+            analyst_data = fundamental_data.get("analyst_data", {})
+            sentiment = fundamental_data.get("sentiment", {})
+            price_context = fundamental_data.get("price_context", {})
+
+            # Calculate fundamental score from free tier data
+            scoring_result = FundamentalAnalyzer.calculate_score(
+                analyst_data=analyst_data,
+                sentiment=sentiment,
+                price_context=price_context,
+            )
 
             result = {
                 "status": "success",
                 "ticker": ticker,
-                "fundamental_score": score,
-                "metrics": context.get("metrics", {}),
-                "recommendation": self._score_to_recommendation(score),
+                "fundamental_score": scoring_result["overall_score"],
+                "scoring_details": scoring_result,
+                "components": {
+                    "analyst_consensus": scoring_result["analyst_score"],
+                    "sentiment": scoring_result["sentiment_score"],
+                    "momentum": scoring_result["momentum_score"],
+                },
+                "data_sources": {
+                    "analyst": analyst_data,
+                    "sentiment": sentiment,
+                    "price_context": price_context,
+                },
+                "recommendation": FundamentalAnalyzer.get_recommendation(
+                    scoring_result["overall_score"]
+                ),
+                "note": "Uses free tier APIs only (no premium financial data endpoints)",
             }
 
-            logger.debug(f"Fundamental analysis for {ticker}: {score}/100")
-            self.remember(f"{ticker}_fundamental_score", score)
+            logger.debug(
+                f"Fundamental analysis for {ticker}: {scoring_result['overall_score']:.1f}/100"
+            )
+            self.remember(f"{ticker}_fundamental_score", scoring_result["overall_score"])
 
             return result
 
@@ -265,38 +313,3 @@ class FundamentalAnalysisAgent(BaseAgent):
                 "message": str(e),
                 "fundamental_score": 0,
             }
-
-    @staticmethod
-    def _calculate_fundamental_score(context: dict[str, Any]) -> float:
-        """Calculate fundamental score.
-
-        Args:
-            context: Context with metrics
-
-        Returns:
-            Score from 0-100
-        """
-        # Placeholder implementation
-        # In production, would analyze P/E, growth, margins, debt, etc.
-        return 50
-
-    @staticmethod
-    def _score_to_recommendation(score: float) -> str:
-        """Convert score to recommendation.
-
-        Args:
-            score: Fundamental score (0-100)
-
-        Returns:
-            Recommendation string
-        """
-        if score >= 75:
-            return "strong_buy"
-        elif score >= 60:
-            return "buy"
-        elif score >= 40:
-            return "hold"
-        elif score >= 25:
-            return "sell"
-        else:
-            return "strong_sell"
