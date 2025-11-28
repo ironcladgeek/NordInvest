@@ -197,30 +197,51 @@ class SentimentAnalyzerTool(BaseTool):
             negative = 0
             neutral = 0
             total_score = 0
+            scored_count = 0
 
             for article in articles:
-                sentiment = article.get("sentiment", "neutral")
-                score = article.get("sentiment_score", 0) or 0
+                sentiment = article.get("sentiment")
+                score = article.get("sentiment_score")
 
-                if sentiment == "positive":
-                    positive += 1
-                elif sentiment == "negative":
-                    negative += 1
-                else:
-                    neutral += 1
+                # Only count articles that have sentiment data
+                if sentiment:
+                    if sentiment == "positive":
+                        positive += 1
+                    elif sentiment == "negative":
+                        negative += 1
+                    else:
+                        neutral += 1
 
-                total_score += score
+                if score is not None:
+                    total_score += score
+                    scored_count += 1
 
-            avg_sentiment = total_score / len(articles) if articles else 0
+            # If no sentiment data is available, return neutral
+            if positive + negative + neutral == 0:
+                return {
+                    "count": len(articles),
+                    "positive": 0,
+                    "negative": 0,
+                    "neutral": len(articles),
+                    "positive_pct": 0.0,
+                    "negative_pct": 0.0,
+                    "neutral_pct": 100.0,
+                    "avg_sentiment": 0.0,
+                    "sentiment_direction": "neutral",
+                    "note": "No sentiment data available from provider. LLM analysis needed.",
+                }
+
+            total_categorized = positive + negative + neutral
+            avg_sentiment = total_score / scored_count if scored_count > 0 else 0
 
             return {
                 "count": len(articles),
                 "positive": positive,
                 "negative": negative,
                 "neutral": neutral,
-                "positive_pct": round(positive / len(articles) * 100, 2),
-                "negative_pct": round(negative / len(articles) * 100, 2),
-                "neutral_pct": round(neutral / len(articles) * 100, 2),
+                "positive_pct": round(positive / total_categorized * 100, 2),
+                "negative_pct": round(negative / total_categorized * 100, 2),
+                "neutral_pct": round(neutral / total_categorized * 100, 2),
                 "avg_sentiment": round(avg_sentiment, 3),
                 "sentiment_direction": (
                     "positive"

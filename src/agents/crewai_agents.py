@@ -1,0 +1,430 @@
+"""CrewAI-based intelligent agents for analysis."""
+
+from typing import Any, Optional
+
+from crewai import Agent, Task
+
+from src.config.llm import initialize_llm_client
+from src.config.schemas import LLMConfig
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
+
+class CrewAIAgentFactory:
+    """Factory for creating CrewAI-based agents."""
+
+    def __init__(self, llm_config: Optional[LLMConfig] = None):
+        """Initialize the factory with LLM configuration.
+
+        Args:
+            llm_config: LLM configuration (uses default if not provided)
+        """
+        self.llm_config = llm_config or LLMConfig()
+        self.llm_client = initialize_llm_client(self.llm_config)
+        logger.info(f"Initialized CrewAI factory with {self.llm_config.provider} provider")
+
+    def create_market_scanner_agent(self, tools: list = None) -> Agent:
+        """Create market scanner agent.
+
+        Args:
+            tools: List of tools available to the agent
+
+        Returns:
+            Configured CrewAI Agent for market scanning
+        """
+        return Agent(
+            role="Market Scanner Analyst",
+            goal=(
+                "Scan financial markets to identify instruments with significant price movements, "
+                "unusual volume patterns, and anomalies that warrant deeper analysis"
+            ),
+            backstory=(
+                "You are an expert market analyst with deep knowledge of technical patterns and "
+                "market microstructure. You excel at detecting emerging trends, unusual volume "
+                "patterns, and price movements that signal potential trading opportunities. "
+                "Your keen eye for detail helps identify instruments that deserve deeper analysis. "
+                "You consider both daily and weekly price movements, volume anomalies, and positions "
+                "at technical extremes."
+            ),
+            tools=tools or [],
+            llm=self.llm_client,
+            verbose=False,
+            allow_delegation=False,
+        )
+
+    def create_technical_analysis_agent(self, tools: list = None) -> Agent:
+        """Create technical analysis agent.
+
+        Args:
+            tools: List of tools available to the agent
+
+        Returns:
+            Configured CrewAI Agent for technical analysis
+        """
+        return Agent(
+            role="Senior Technical Analyst",
+            goal=(
+                "Interpret pre-calculated technical indicators to provide insights on "
+                "trend strength, momentum, support/resistance levels, and trading opportunities"
+            ),
+            backstory=(
+                "You are a skilled technical analyst with expertise in interpreting "
+                "chart patterns, moving averages, momentum indicators, and volume analysis. "
+                "You receive pre-calculated technical indicators (RSI, MACD, SMA, ATR, etc.) "
+                "and provide expert interpretation of what these signals mean. "
+                "You identify trend strength, potential reversals, overbought/oversold conditions, "
+                "and support/resistance levels. Your analysis incorporates multiple timeframes "
+                "and helps traders make informed decisions based on price action. "
+                "You understand how different indicators complement each other and provide "
+                "holistic technical insights. Note: The mathematical calculations are already done - "
+                "your job is to interpret the signals and provide trading insights."
+            ),
+            tools=tools or [],
+            llm=self.llm_client,
+            verbose=False,
+            allow_delegation=False,
+        )
+
+    def create_fundamental_analysis_agent(self, tools: list = None) -> Agent:
+        """Create fundamental analysis agent.
+
+        Args:
+            tools: List of tools available to the agent
+
+        Returns:
+            Configured CrewAI Agent for fundamental analysis
+        """
+        return Agent(
+            role="Fundamental Analyst",
+            goal=(
+                "Analyze financial statements and metrics to assess company health, growth "
+                "prospects, and valuation. Provide investment-grade fundamental scores."
+            ),
+            backstory=(
+                "You are an experienced fundamental analyst with deep expertise in financial "
+                "statement analysis, ratio interpretation, and company valuation. "
+                "You evaluate earnings growth, profit margins, cash flow quality, debt levels, "
+                "and valuation metrics (P/E, EV/EBITDA, P/B, PEG). "
+                "You can identify high-quality companies at reasonable valuations and weak "
+                "companies even if they appear cheap. You understand industry dynamics and "
+                "competitive positioning."
+            ),
+            tools=tools or [],
+            llm=self.llm_client,
+            verbose=False,
+            allow_delegation=False,
+        )
+
+    def create_sentiment_analysis_agent(self, tools: list = None) -> Agent:
+        """Create sentiment analysis agent.
+
+        Args:
+            tools: List of tools available to the agent
+
+        Returns:
+            Configured CrewAI Agent for sentiment analysis
+        """
+        return Agent(
+            role="Sentiment Analyst",
+            goal=(
+                "Analyze news article sentiment and identify how news events "
+                "and market sentiment impact the investment thesis."
+            ),
+            backstory=(
+                "You are a skilled sentiment analyst with expertise in natural language processing, "
+                "news interpretation, and market psychology. "
+                "You analyze news article titles and summaries to determine sentiment (positive/negative/neutral) "
+                "and assign sentiment scores. You classify events by type (earnings, regulatory, product launches, "
+                "competitive, macro) and assess their importance and potential market impact. "
+                "You understand how different types of news affect company valuations and stock prices, "
+                "and can identify whether sentiment represents rational analysis or emotional overreaction. "
+                "You excel at identifying key themes, catalysts, and sentiment trends from news coverage."
+            ),
+            tools=tools or [],
+            llm=self.llm_client,
+            verbose=False,
+            allow_delegation=False,
+        )
+
+    def create_signal_synthesizer_agent(self) -> Agent:
+        """Create signal synthesizer agent.
+
+        Returns:
+            Configured CrewAI Agent for signal synthesis
+        """
+        return Agent(
+            role="Investment Signal Synthesizer",
+            goal=(
+                "Synthesize technical, fundamental, and sentiment analyses into comprehensive "
+                "investment signals with clear reasoning and risk assessment"
+            ),
+            backstory=(
+                "You are a senior investment strategist responsible for synthesizing insights "
+                "from multiple analysis perspectives. "
+                "You combine technical, fundamental, and sentiment signals into coherent "
+                "investment theses. You weigh conflicting signals, identify consensus areas, "
+                "and provide clear recommendation rationale. "
+                "You assess confidence levels based on signal agreement and data quality. "
+                "You generate human-readable investment narratives that explain the investment case."
+            ),
+            tools=[],  # Tools will be added separately
+            llm=self.llm_client,
+            verbose=False,
+            allow_delegation=False,
+        )
+
+
+class CrewAITaskFactory:
+    """Factory for creating structured CrewAI tasks."""
+
+    @staticmethod
+    def create_market_scan_task(
+        agent: Agent,
+        ticker: str,
+        context: dict[str, Any],
+    ) -> Task:
+        """Create market scanning task.
+
+        Args:
+            agent: Market scanner agent
+            ticker: Stock ticker symbol
+            context: Additional context for the scan
+
+        Returns:
+            Configured Task object
+        """
+        return Task(
+            description=(
+                f"Scan {ticker} for market anomalies and trading signals.\n"
+                f"Analyze the following data:\n"
+                f"- Price movements (daily and weekly changes)\n"
+                f"- Volume patterns and anomalies\n"
+                f"- Technical extremes (30-day highs/lows)\n"
+                f"\n"
+                f"Identify:\n"
+                f"1. Significant price movements (>5% daily, >15% weekly)\n"
+                f"2. Unusual volume spikes (>1.5x average)\n"
+                f"3. New 30-day highs or lows\n"
+                f"4. Any other market anomalies\n"
+                f"\n"
+                f"Provide a clear assessment of whether {ticker} warrants deeper analysis."
+            ),
+            agent=agent,
+            expected_output=(
+                "List of anomalies found with explanations and recommendation to analyze further"
+            ),
+        )
+
+    @staticmethod
+    def create_technical_analysis_task(
+        agent: Agent,
+        ticker: str,
+        context: dict[str, Any],
+    ) -> Task:
+        """Create technical analysis task.
+
+        Args:
+            agent: Technical analyst agent
+            ticker: Stock ticker symbol
+            context: Additional context including price data
+
+        Returns:
+            Configured Task object
+        """
+        return Task(
+            description=(
+                f"Interpret the pre-calculated technical indicators for {ticker}.\n"
+                f"\n"
+                f"IMPORTANT: Use the 'Calculate Technical Indicators' tool with ticker='{ticker}' "
+                f"to get the pre-computed technical analysis. This tool performs all mathematical "
+                f"calculations (SMA, RSI, MACD, ATR, volume trends) using rule-based algorithms.\n"
+                f"\n"
+                f"Your job is to INTERPRET these calculated values:\n"
+                f"1. Analyze the trend (is the price above/below key moving averages?)\n"
+                f"2. Assess momentum (what do RSI and MACD values indicate?)\n"
+                f"3. Identify overbought/oversold conditions (RSI > 70 or < 30?)\n"
+                f"4. Evaluate volume patterns (is there unusual volume?)\n"
+                f"5. Determine support/resistance levels from moving averages\n"
+                f"6. Identify potential entry/exit points\n"
+                f"7. Assess overall technical strength and provide a score (0-100)\n"
+                f"\n"
+                f"Do NOT try to calculate indicators yourself - they are already calculated. "
+                f"Focus on interpretation and insight."
+            ),
+            agent=agent,
+            expected_output=(
+                "Technical analysis interpretation with trend assessment, momentum analysis, "
+                "signal interpretation, and technical score (0-100)"
+            ),
+        )
+
+    @staticmethod
+    def create_fundamental_analysis_task(
+        agent: Agent,
+        ticker: str,
+        context: dict[str, Any],
+    ) -> Task:
+        """Create fundamental analysis task.
+
+        Args:
+            agent: Fundamental analyst agent
+            ticker: Stock ticker symbol
+            context: Additional context including financial data
+
+        Returns:
+            Configured Task object
+        """
+        return Task(
+            description=(
+                f"Analyze fundamentals of {ticker}.\n"
+                f"\n"
+                f"Evaluate:\n"
+                f"1. Revenue and earnings growth (YoY, QoQ)\n"
+                f"2. Profit margins (gross, operating, net)\n"
+                f"3. Cash flow quality and trends\n"
+                f"4. Debt ratios and financial health\n"
+                f"5. Valuation metrics (P/E, EV/EBITDA, P/B, PEG)\n"
+                f"6. Return on equity and capital efficiency\n"
+                f"\n"
+                f"Assess:\n"
+                f"1. Business quality and competitive position\n"
+                f"2. Growth prospects\n"
+                f"3. Valuation attractiveness\n"
+                f"4. Financial risks\n"
+                f"\n"
+                f"Provide a fundamental score (0-100) and recommendation."
+            ),
+            agent=agent,
+            expected_output=(
+                "Detailed fundamental analysis with metrics assessment, growth prospects, "
+                "valuation analysis, and fundamental score (0-100)"
+            ),
+        )
+
+    @staticmethod
+    def create_sentiment_analysis_task(
+        agent: Agent,
+        ticker: str,
+        context: dict[str, Any],
+    ) -> Task:
+        """Create sentiment analysis task.
+
+        Args:
+            agent: Sentiment analyst agent
+            ticker: Stock ticker symbol
+            context: Additional context including news data
+
+        Returns:
+            Configured Task object
+        """
+        return Task(
+            description=(
+                f"Analyze news sentiment for {ticker}.\n"
+                f"\n"
+                f"Use the 'Analyze Sentiment' tool with ticker='{ticker}' to fetch recent news articles.\n"
+                f"\n"
+                f"For each article, analyze the title and summary to:\n"
+                f"1. Determine sentiment: positive, negative, or neutral\n"
+                f"2. Assign a sentiment score (-1.0 to +1.0)\n"
+                f"3. Classify the event type (earnings, product launch, partnership, regulatory, competitive, etc.)\n"
+                f"4. Assess importance/impact (0-100)\n"
+                f"\n"
+                f"Then synthesize the analysis:\n"
+                f"1. Calculate overall sentiment distribution (% positive/negative/neutral)\n"
+                f"2. Identify major themes and patterns\n"
+                f"3. Highlight key catalysts or events\n"
+                f"4. Assess whether sentiment aligns with or contradicts fundamentals\n"
+                f"5. Determine if there are any sentiment shifts or trends\n"
+                f"6. Provide an overall sentiment score (0-100)\n"
+                f"\n"
+                f"Focus on quality analysis - sentiment classification requires understanding context, "
+                f"not just keyword matching."
+            ),
+            agent=agent,
+            expected_output=(
+                "Sentiment analysis with article-level sentiment scores, key themes, event classification, "
+                "overall sentiment distribution, and final sentiment score (0-100)"
+            ),
+        )
+
+    @staticmethod
+    def create_signal_synthesis_task(
+        agent: Agent,
+        ticker: str,
+        technical_analysis: dict[str, Any],
+        fundamental_analysis: dict[str, Any],
+        sentiment_analysis: dict[str, Any],
+    ) -> Task:
+        """Create signal synthesis task.
+
+        Args:
+            agent: Signal synthesizer agent
+            ticker: Stock ticker symbol
+            technical_analysis: Technical analysis results
+            fundamental_analysis: Fundamental analysis results
+            sentiment_analysis: Sentiment analysis results
+
+        Returns:
+            Configured Task object
+        """
+        return Task(
+            description=(
+                f"Synthesize all analyses for {ticker} into a structured investment signal.\n"
+                f"\n"
+                f"Technical Analysis Results:\n"
+                f"{technical_analysis}\n"
+                f"\n"
+                f"Fundamental Analysis Results:\n"
+                f"{fundamental_analysis}\n"
+                f"\n"
+                f"Sentiment Analysis Results:\n"
+                f"{sentiment_analysis}\n"
+                f"\n"
+                f"You must output ONLY a valid JSON object (no markdown, no extra text) with this exact structure:\n"
+                f"{{\n"
+                f'  "ticker": "{ticker}",\n'
+                f'  "name": "Company Name",\n'
+                f'  "market": "Market Name",\n'
+                f'  "sector": "Sector or null",\n'
+                f'  "current_price": 123.45,\n'
+                f'  "currency": "USD",\n'
+                f'  "scores": {{\n'
+                f'    "technical": 0-100,\n'
+                f'    "fundamental": 0-100,\n'
+                f'    "sentiment": 0-100\n'
+                f"  }},\n"
+                f'  "final_score": 0-100 (weighted: fundamental 35%, technical 35%, sentiment 30%),\n'
+                f'  "recommendation": "strong_buy|buy|hold_bullish|hold|hold_bearish|sell|strong_sell",\n'
+                f'  "confidence": 0-100,\n'
+                f'  "time_horizon": "1W|1M|3M|6M|1Y",\n'
+                f'  "expected_return_min": -100 to 500,\n'
+                f'  "expected_return_max": -100 to 500,\n'
+                f'  "key_reasons": ["reason1", "reason2", "reason3"],\n'
+                f'  "risk": {{\n'
+                f'    "level": "low|medium|high|very_high",\n'
+                f'    "volatility": "low|normal|high",\n'
+                f'    "volatility_pct": 0.0-100.0,\n'
+                f'    "liquidity": "illiquid|normal|highly_liquid",\n'
+                f'    "concentration_risk": true|false,\n'
+                f'    "sector_risk": "sector-specific risks or null",\n'
+                f'    "flags": ["risk_flag1", "risk_flag2"]\n'
+                f"  }},\n"
+                f'  "rationale": "Detailed investment thesis",\n'
+                f'  "caveats": ["caveat1", "caveat2"]\n'
+                f"}}\n"
+                f"\n"
+                f"Guidelines:\n"
+                f"- Use scores from each analysis component\n"
+                f"- Calculate final_score with weights: fundamental 35%, technical 35%, sentiment 30%\n"
+                f"- Recommendation based on final_score: >80=strong_buy, 70-80=buy, 60-70=hold_bullish, "
+                f"50-60=hold, 40-50=hold_bearish, 30-40=sell, <30=strong_sell\n"
+                f"- Set confidence based on agreement between analyses\n"
+                f"- Extract current_price from technical analysis\n"
+                f"- Return ONLY the JSON object, nothing else\n"
+            ),
+            agent=agent,
+            expected_output=(
+                "Valid JSON object matching the InvestmentSignal schema with all required fields populated"
+            ),
+        )

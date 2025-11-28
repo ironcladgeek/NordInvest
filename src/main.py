@@ -6,9 +6,13 @@ from pathlib import Path
 
 import typer
 
+from src.analysis import InvestmentSignal
+from src.analysis.models import ComponentScores, RiskAssessment
 from src.cache.manager import CacheManager
 from src.config import load_config
 from src.data.portfolio import PortfolioState
+from src.llm.integration import LLMAnalysisOrchestrator
+from src.llm.token_tracker import TokenTracker
 from src.MARKET_TICKERS import get_tickers_for_markets
 from src.pipeline import AnalysisPipeline
 from src.utils.llm_check import get_fallback_warning_message, log_llm_status
@@ -22,6 +26,211 @@ app = typer.Typer(
 )
 
 logger = get_logger(__name__)
+
+
+def _run_llm_analysis(
+    tickers: list[str],
+    config_obj,
+    typer_instance,
+    debug_llm: bool = False,
+) -> tuple[list[InvestmentSignal], None]:
+    """Run analysis using LLM-powered orchestrator.
+
+    Args:
+        tickers: List of tickers to analyze
+        config_obj: Loaded configuration object
+        typer_instance: Typer instance for output
+        debug_llm: Enable LLM debug mode (save inputs/outputs)
+
+    Returns:
+        Tuple of (signals, portfolio_manager)
+    """
+    try:
+        # Initialize LLM orchestrator with token tracking
+        data_dir = Path("data")
+        tracker = TokenTracker(
+            config_obj.token_tracker,
+            storage_dir=data_dir / "tracking",
+        )
+
+        # Setup debug directory if requested
+        debug_dir = None
+        if debug_llm:
+            debug_dir = data_dir / "llm_debug" / datetime.now().strftime("%Y%m%d_%H%M%S")
+            debug_dir.mkdir(parents=True, exist_ok=True)
+            typer_instance.echo(f"  LLM debug mode: enabled")
+            typer_instance.echo(f"  Debug outputs: {debug_dir}")
+
+        orchestrator = LLMAnalysisOrchestrator(
+            llm_config=config_obj.llm,
+            token_tracker=tracker,
+            enable_fallback=config_obj.llm.enable_fallback,
+            debug_dir=debug_dir,
+        )
+
+        typer_instance.echo(f"  LLM Provider: {config_obj.llm.provider}")
+        typer_instance.echo(f"  Model: {config_obj.llm.model}")
+        typer_instance.echo(f"  Temperature: {config_obj.llm.temperature}")
+        typer_instance.echo(f"  Token tracking: enabled")
+
+        # Analyze each ticker with LLM
+        signals = []
+        with typer_instance.progressbar(
+            tickers, label="Analyzing instruments", show_pos=True, show_percent=True
+        ) as progress:
+            for ticker in progress:
+                try:
+                    result = orchestrator.analyze_instrument(ticker)
+
+                    # Extract signal from result if successful
+                    if result.get("status") == "complete":
+                        # Use the synthesis result if available
+                        synthesis_result = result.get("results", {}).get("synthesis", {})
+                        if synthesis_result.get("status") == "success":
+                            signal_data = synthesis_result.get("result", {})
+
+                            # Handle CrewOutput object - extract the raw output
+                            if hasattr(signal_data, "raw"):
+                                signal_text = signal_data.raw
+                            elif hasattr(signal_data, "result"):
+                                signal_text = signal_data.result
+                            else:
+                                signal_text = str(signal_data)
+
+                            # Create InvestmentSignal from LLM result
+                            signal = _create_signal_from_llm_result(ticker, signal_text)
+                            if signal:
+                                signals.append(signal)
+                        else:
+                            logger.warning(f"Synthesis failed for {ticker}, skipping")
+
+                except Exception as e:
+                    logger.error(f"Error analyzing {ticker} with LLM: {e}")
+                    typer_instance.echo(f"  ⚠️  Error analyzing {ticker}: {e}")
+
+        # Log token usage summary
+        daily_stats = tracker.get_daily_stats()
+        if daily_stats:
+            typer_instance.echo(f"\n💰 Token Usage Summary:")
+            typer_instance.echo(f"  Input tokens: {daily_stats.total_input_tokens:,}")
+            typer_instance.echo(f"  Output tokens: {daily_stats.total_output_tokens:,}")
+            typer_instance.echo(f"  Cost: €{daily_stats.total_cost_eur:.2f}")
+            typer_instance.echo(f"  Requests: {daily_stats.requests}")
+
+        return signals, None
+
+    except Exception as e:
+        logger.error(f"Error in LLM analysis: {e}", exc_info=True)
+        typer_instance.echo(f"❌ LLM Analysis Error: {e}", err=True)
+        return [], None
+
+
+def _create_signal_from_llm_result(
+    ticker: str,
+    llm_result: dict | str,
+) -> InvestmentSignal | None:
+    """Convert LLM analysis result to InvestmentSignal.
+
+    Args:
+        ticker: Stock ticker
+        llm_result: LLM analysis result (dict or JSON string)
+
+    Returns:
+        InvestmentSignal or None if conversion fails
+    """
+    try:
+        # Parse LLM result if it's a string
+        if isinstance(llm_result, str):
+            import json
+            import re
+
+            # Try to extract JSON from markdown code blocks or plain text
+            json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", llm_result, re.DOTALL)
+            if json_match:
+                llm_result = json.loads(json_match.group(1))
+            else:
+                # Try to find JSON object in the text
+                json_match = re.search(r"\{.*\}", llm_result, re.DOTALL)
+                if json_match:
+                    try:
+                        llm_result = json.loads(json_match.group(0))
+                    except json.JSONDecodeError:
+                        logger.warning(f"Could not parse LLM result as JSON: {llm_result[:200]}")
+                        return None
+                else:
+                    logger.warning(f"No JSON found in LLM result: {llm_result[:200]}")
+                    return None
+
+        # Map recommendation to enum values
+        recommendation = llm_result.get("recommendation", "hold").lower()
+        recommendation_map = {
+            "strong_buy": "strong_buy",
+            "buy": "buy",
+            "hold_bullish": "hold_bullish",
+            "hold": "hold",
+            "hold_bearish": "hold_bearish",
+            "sell": "sell",
+            "strong_sell": "strong_sell",
+        }
+        recommendation = recommendation_map.get(recommendation, "hold")
+
+        # Parse risk assessment with proper defaults
+        risk_data = llm_result.get("risk", {})
+        risk_level = risk_data.get("level", "medium").lower()
+        # Map 'moderate' to 'medium' for compatibility
+        if risk_level == "moderate":
+            risk_level = "medium"
+
+        risk_assessment = RiskAssessment(
+            level=risk_level,
+            volatility=risk_data.get("volatility", "normal"),
+            volatility_pct=risk_data.get("volatility_pct", 2.0),
+            liquidity=risk_data.get("liquidity", "normal"),
+            concentration_risk=risk_data.get("concentration_risk", False),
+            sector_risk=risk_data.get("sector_risk"),
+            flags=risk_data.get("flags", risk_data.get("factors", [])),
+        )
+
+        # Create signal with proper schema
+        from datetime import datetime
+
+        signal = InvestmentSignal(
+            ticker=ticker,
+            name=llm_result.get("name", ticker),
+            market=llm_result.get("market", "Global"),
+            sector=llm_result.get("sector"),
+            current_price=llm_result.get("current_price", 0.0),
+            currency=llm_result.get("currency", "USD"),
+            scores=ComponentScores(
+                **llm_result.get(
+                    "scores",
+                    {
+                        "technical": 50,
+                        "fundamental": 50,
+                        "sentiment": 50,
+                    },
+                )
+            ),
+            final_score=llm_result.get("final_score", 50.0),
+            recommendation=recommendation,
+            confidence=llm_result.get("confidence", 50.0),
+            time_horizon=llm_result.get("time_horizon", "3M"),
+            expected_return_min=llm_result.get("expected_return_min", 0.0),
+            expected_return_max=llm_result.get("expected_return_max", 10.0),
+            key_reasons=llm_result.get("key_reasons", []),
+            risk=risk_assessment,
+            allocation=None,  # Will be calculated later
+            generated_at=datetime.now(),
+            analysis_date=datetime.now().strftime("%Y-%m-%d"),
+            rationale=llm_result.get("rationale"),
+            caveats=llm_result.get("caveats", []),
+        )
+
+        return signal
+
+    except Exception as e:
+        logger.error(f"Error creating signal from LLM result: {e}")
+        return None
 
 
 @app.command()
@@ -67,6 +276,21 @@ def analyze(
         "--save-report/--no-save-report",
         help="Save report to disk",
     ),
+    use_llm: bool = typer.Option(
+        False,
+        "--llm",
+        help="Use LLM-powered analysis (CrewAI with Claude/GPT) instead of rule-based",
+    ),
+    debug_llm: bool = typer.Option(
+        False,
+        "--debug-llm",
+        help="Save LLM inputs and outputs to data/llm_debug/ for inspection (only works with --llm)",
+    ),
+    test: bool = typer.Option(
+        False,
+        "--test",
+        help="Run minimal test case with a single ticker (AAPL) to verify system functionality",
+    ),
 ) -> None:
     """Analyze markets and generate investment signals.
 
@@ -74,6 +298,15 @@ def analyze(
     recommendations with confidence scores.
 
     Examples:
+        # Run quick test (rule-based)
+        analyze --test
+
+        # Run quick test (LLM mode)
+        analyze --test --llm
+
+        # Analyze with LLM debug mode (saves inputs/outputs)
+        analyze --ticker INTU --llm --debug-llm
+
         # Analyze all available markets
         analyze --market global
 
@@ -90,11 +323,24 @@ def analyze(
     run_log = None
     signals_count = 0
 
-    # Validate that either market or ticker is provided
-    if not market and not ticker:
+    # Handle test mode
+    if test:
+        ticker = "AAPL"  # Use a single, well-known ticker for testing
+        typer.echo("🧪 Running minimal test case...")
+        typer.echo(f"  Test ticker: {ticker}")
+        typer.echo(f"  Mode: {'LLM-powered' if use_llm else 'Rule-based'}")
+        # Don't save report in test mode unless explicitly requested
+        if save_report:
+            save_report = False
+            typer.echo("  Report saving: disabled (test mode)")
+
+    # Validate that either market, ticker, or test is provided
+    if not market and not ticker and not test:
         typer.echo(
-            "❌ Error: Either --market or --ticker must be provided\n"
+            "❌ Error: Either --market, --ticker, or --test must be provided\n"
             "Examples:\n"
+            "  analyze --test              # Quick test\n"
+            "  analyze --test --llm        # Quick test with LLM\n"
             "  analyze --market global\n"
             "  analyze --market us\n"
             "  analyze --market us,eu --limit 50\n"
@@ -105,6 +351,10 @@ def analyze(
 
     if market and ticker:
         typer.echo("❌ Error: Cannot specify both --market and --ticker", err=True)
+        raise typer.Exit(code=1)
+
+    if test and (market or (ticker and not ticker == "AAPL")):
+        typer.echo("❌ Error: Cannot use --test with --market or --ticker", err=True)
         raise typer.Exit(code=1)
 
     try:
@@ -185,7 +435,19 @@ def analyze(
                 typer.echo(f"  Limit: {limit} instruments per market")
             typer.echo(f"  Total instruments to analyze: {len(ticker_list)}")
 
-        signals, portfolio_manager = pipeline.run_analysis(ticker_list)
+        # Run analysis (LLM or rule-based)
+        if use_llm:
+            typer.echo("\n🤖 Using LLM-powered analysis (CrewAI with intelligent agents)")
+            signals, portfolio_manager = _run_llm_analysis(
+                ticker_list, config_obj, typer, debug_llm
+            )
+            analysis_mode = "llm"
+        else:
+            typer.echo(
+                "\n📊 Using rule-based analysis (technical indicators & fundamental metrics)"
+            )
+            signals, portfolio_manager = pipeline.run_analysis(ticker_list)
+            analysis_mode = "rule_based"
         signals_count = len(signals)
 
         if signals:
@@ -196,6 +458,7 @@ def analyze(
             report = pipeline.generate_daily_report(
                 signals,
                 generate_allocation=True,
+                analysis_mode=analysis_mode,
             )
 
             # Display summary
