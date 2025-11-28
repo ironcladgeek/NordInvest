@@ -243,11 +243,24 @@ class ReportGenerator:
         Returns:
             Markdown formatted signal
         """
+        # Map currency codes to symbols
+        currency_symbols = {
+            "USD": "$",
+            "EUR": "€",
+            "GBP": "£",
+            "JPY": "¥",
+            "CHF": "CHF",
+            "SEK": "kr",
+            "NOK": "kr",
+            "DKK": "kr",
+        }
+        currency_symbol = currency_symbols.get(signal.currency, signal.currency)
+
         lines = [
             f"\n### {signal.ticker} - {signal.name}\n",
             f"**Recommendation:** {signal.recommendation.value.upper()} "
             f"| **Confidence:** {signal.confidence}%\n",
-            f"**Final Score:** {signal.final_score}/100 | **Price:** €{signal.current_price:.2f}\n",
+            f"**Final Score:** {signal.final_score}/100 | **Price:** {currency_symbol}{signal.current_price:.2f}\n",
             f"**Time Horizon:** {signal.time_horizon} "
             f"| **Expected Return:** {signal.expected_return_min:.1f}% - {signal.expected_return_max:.1f}%\n\n",
             "**Component Scores:**\n",
