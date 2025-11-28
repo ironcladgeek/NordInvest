@@ -7,6 +7,7 @@ from pathlib import Path
 import typer
 
 from src.analysis import InvestmentSignal
+from src.analysis.models import ComponentScores, RiskAssessment
 from src.cache.manager import CacheManager
 from src.config import load_config
 from src.data.portfolio import PortfolioState
@@ -31,6 +32,7 @@ def _run_llm_analysis(
     tickers: list[str],
     config_obj,
     typer_instance,
+    debug_llm: bool = False,
 ) -> tuple[list[InvestmentSignal], None]:
     """Run analysis using LLM-powered orchestrator.
 
@@ -38,6 +40,7 @@ def _run_llm_analysis(
         tickers: List of tickers to analyze
         config_obj: Loaded configuration object
         typer_instance: Typer instance for output
+        debug_llm: Enable LLM debug mode (save inputs/outputs)
 
     Returns:
         Tuple of (signals, portfolio_manager)
@@ -50,10 +53,19 @@ def _run_llm_analysis(
             storage_dir=data_dir / "tracking",
         )
 
+        # Setup debug directory if requested
+        debug_dir = None
+        if debug_llm:
+            debug_dir = data_dir / "llm_debug" / datetime.now().strftime("%Y%m%d_%H%M%S")
+            debug_dir.mkdir(parents=True, exist_ok=True)
+            typer_instance.echo(f"  LLM debug mode: enabled")
+            typer_instance.echo(f"  Debug outputs: {debug_dir}")
+
         orchestrator = LLMAnalysisOrchestrator(
             llm_config=config_obj.llm,
             token_tracker=tracker,
             enable_fallback=config_obj.llm.enable_fallback,
+            debug_dir=debug_dir,
         )
 
         typer_instance.echo(f"  LLM Provider: {config_obj.llm.provider}")
@@ -76,8 +88,17 @@ def _run_llm_analysis(
                         synthesis_result = result.get("results", {}).get("synthesis", {})
                         if synthesis_result.get("status") == "success":
                             signal_data = synthesis_result.get("result", {})
+
+                            # Handle CrewOutput object - extract the raw output
+                            if hasattr(signal_data, "raw"):
+                                signal_text = signal_data.raw
+                            elif hasattr(signal_data, "result"):
+                                signal_text = signal_data.result
+                            else:
+                                signal_text = str(signal_data)
+
                             # Create InvestmentSignal from LLM result
-                            signal = _create_signal_from_llm_result(ticker, signal_data)
+                            signal = _create_signal_from_llm_result(ticker, signal_text)
                             if signal:
                                 signals.append(signal)
                         else:
@@ -106,55 +127,103 @@ def _run_llm_analysis(
 
 def _create_signal_from_llm_result(
     ticker: str,
-    llm_result: dict,
+    llm_result: dict | str,
 ) -> InvestmentSignal | None:
     """Convert LLM analysis result to InvestmentSignal.
 
     Args:
         ticker: Stock ticker
-        llm_result: LLM analysis result dict
+        llm_result: LLM analysis result (dict or JSON string)
 
     Returns:
         InvestmentSignal or None if conversion fails
     """
     try:
-        # Parse LLM result (assumes JSON structure from prompt)
+        # Parse LLM result if it's a string
         if isinstance(llm_result, str):
             import json
+            import re
 
-            llm_result = json.loads(llm_result)
+            # Try to extract JSON from markdown code blocks or plain text
+            json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", llm_result, re.DOTALL)
+            if json_match:
+                llm_result = json.loads(json_match.group(1))
+            else:
+                # Try to find JSON object in the text
+                json_match = re.search(r"\{.*\}", llm_result, re.DOTALL)
+                if json_match:
+                    try:
+                        llm_result = json.loads(json_match.group(0))
+                    except json.JSONDecodeError:
+                        logger.warning(f"Could not parse LLM result as JSON: {llm_result[:200]}")
+                        return None
+                else:
+                    logger.warning(f"No JSON found in LLM result: {llm_result[:200]}")
+                    return None
 
-        # Extract key fields
-        recommendation = llm_result.get("recommendation", "Hold").upper()
-        if recommendation not in ["BUY", "HOLD", "AVOID"]:
-            recommendation = "HOLD"
+        # Map recommendation to enum values
+        recommendation = llm_result.get("recommendation", "hold").lower()
+        recommendation_map = {
+            "strong_buy": "strong_buy",
+            "buy": "buy",
+            "hold_bullish": "hold_bullish",
+            "hold": "hold",
+            "hold_bearish": "hold_bearish",
+            "sell": "sell",
+            "strong_sell": "strong_sell",
+        }
+        recommendation = recommendation_map.get(recommendation, "hold")
 
-        combined_score = llm_result.get("combined_score", 50)
-        confidence = llm_result.get("confidence", 50)
-        thesis = llm_result.get("thesis", "")
+        # Parse risk assessment with proper defaults
+        risk_data = llm_result.get("risk", {})
+        risk_level = risk_data.get("level", "medium").lower()
+        # Map 'moderate' to 'medium' for compatibility
+        if risk_level == "moderate":
+            risk_level = "medium"
 
-        # Create signal
+        risk_assessment = RiskAssessment(
+            level=risk_level,
+            volatility=risk_data.get("volatility", "normal"),
+            volatility_pct=risk_data.get("volatility_pct", 2.0),
+            liquidity=risk_data.get("liquidity", "normal"),
+            concentration_risk=risk_data.get("concentration_risk", False),
+            sector_risk=risk_data.get("sector_risk"),
+            flags=risk_data.get("flags", risk_data.get("factors", [])),
+        )
+
+        # Create signal with proper schema
+        from datetime import datetime
+
         signal = InvestmentSignal(
             ticker=ticker,
-            name=ticker,  # Use ticker as name since we may not have company name
-            market="Global",
-            sector="Unknown",
+            name=llm_result.get("name", ticker),
+            market=llm_result.get("market", "Global"),
+            sector=llm_result.get("sector"),
+            current_price=llm_result.get("current_price", 0.0),
+            currency=llm_result.get("currency", "USD"),
+            scores=ComponentScores(
+                **llm_result.get(
+                    "scores",
+                    {
+                        "technical": 50,
+                        "fundamental": 50,
+                        "sentiment": 50,
+                    },
+                )
+            ),
+            final_score=llm_result.get("final_score", 50.0),
             recommendation=recommendation,
-            time_horizon="3M",
-            expected_return={"min": 5, "max": 15},
-            confidence=confidence,
-            scores={
-                "fundamental": llm_result.get("fundamental_score", 50),
-                "technical": llm_result.get("technical_score", 50),
-                "sentiment": llm_result.get("sentiment_score", 50),
-            },
-            key_reasons=llm_result.get("catalysts", []),
-            risk_assessment={
-                "level": "Medium",
-                "volatility": "Normal",
-                "flags": llm_result.get("risks", []),
-            },
-            allocation={"eur": 0, "percentage": 0},
+            confidence=llm_result.get("confidence", 50.0),
+            time_horizon=llm_result.get("time_horizon", "3M"),
+            expected_return_min=llm_result.get("expected_return_min", 0.0),
+            expected_return_max=llm_result.get("expected_return_max", 10.0),
+            key_reasons=llm_result.get("key_reasons", []),
+            risk=risk_assessment,
+            allocation=None,  # Will be calculated later
+            generated_at=datetime.now(),
+            analysis_date=datetime.now().strftime("%Y-%m-%d"),
+            rationale=llm_result.get("rationale"),
+            caveats=llm_result.get("caveats", []),
         )
 
         return signal
@@ -212,6 +281,16 @@ def analyze(
         "--llm",
         help="Use LLM-powered analysis (CrewAI with Claude/GPT) instead of rule-based",
     ),
+    debug_llm: bool = typer.Option(
+        False,
+        "--debug-llm",
+        help="Save LLM inputs and outputs to data/llm_debug/ for inspection (only works with --llm)",
+    ),
+    test: bool = typer.Option(
+        False,
+        "--test",
+        help="Run minimal test case with a single ticker (AAPL) to verify system functionality",
+    ),
 ) -> None:
     """Analyze markets and generate investment signals.
 
@@ -219,6 +298,15 @@ def analyze(
     recommendations with confidence scores.
 
     Examples:
+        # Run quick test (rule-based)
+        analyze --test
+
+        # Run quick test (LLM mode)
+        analyze --test --llm
+
+        # Analyze with LLM debug mode (saves inputs/outputs)
+        analyze --ticker INTU --llm --debug-llm
+
         # Analyze all available markets
         analyze --market global
 
@@ -235,11 +323,24 @@ def analyze(
     run_log = None
     signals_count = 0
 
-    # Validate that either market or ticker is provided
-    if not market and not ticker:
+    # Handle test mode
+    if test:
+        ticker = "AAPL"  # Use a single, well-known ticker for testing
+        typer.echo("🧪 Running minimal test case...")
+        typer.echo(f"  Test ticker: {ticker}")
+        typer.echo(f"  Mode: {'LLM-powered' if use_llm else 'Rule-based'}")
+        # Don't save report in test mode unless explicitly requested
+        if save_report:
+            save_report = False
+            typer.echo("  Report saving: disabled (test mode)")
+
+    # Validate that either market, ticker, or test is provided
+    if not market and not ticker and not test:
         typer.echo(
-            "❌ Error: Either --market or --ticker must be provided\n"
+            "❌ Error: Either --market, --ticker, or --test must be provided\n"
             "Examples:\n"
+            "  analyze --test              # Quick test\n"
+            "  analyze --test --llm        # Quick test with LLM\n"
             "  analyze --market global\n"
             "  analyze --market us\n"
             "  analyze --market us,eu --limit 50\n"
@@ -250,6 +351,10 @@ def analyze(
 
     if market and ticker:
         typer.echo("❌ Error: Cannot specify both --market and --ticker", err=True)
+        raise typer.Exit(code=1)
+
+    if test and (market or (ticker and not ticker == "AAPL")):
+        typer.echo("❌ Error: Cannot use --test with --market or --ticker", err=True)
         raise typer.Exit(code=1)
 
     try:
@@ -333,7 +438,9 @@ def analyze(
         # Run analysis (LLM or rule-based)
         if use_llm:
             typer.echo("\n🤖 Using LLM-powered analysis (CrewAI with intelligent agents)")
-            signals, portfolio_manager = _run_llm_analysis(ticker_list, config_obj, typer)
+            signals, portfolio_manager = _run_llm_analysis(
+                ticker_list, config_obj, typer, debug_llm
+            )
         else:
             signals, portfolio_manager = pipeline.run_analysis(ticker_list)
         signals_count = len(signals)

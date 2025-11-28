@@ -24,8 +24,11 @@ class CrewAIAgentFactory:
         self.llm_client = initialize_llm_client(self.llm_config)
         logger.info(f"Initialized CrewAI factory with {self.llm_config.provider} provider")
 
-    def create_market_scanner_agent(self) -> Agent:
+    def create_market_scanner_agent(self, tools: list = None) -> Agent:
         """Create market scanner agent.
+
+        Args:
+            tools: List of tools available to the agent
 
         Returns:
             Configured CrewAI Agent for market scanning
@@ -44,14 +47,17 @@ class CrewAIAgentFactory:
                 "You consider both daily and weekly price movements, volume anomalies, and positions "
                 "at technical extremes."
             ),
-            tools=[],  # Tools will be added separately
+            tools=tools or [],
             llm=self.llm_client,
             verbose=False,
             allow_delegation=False,
         )
 
-    def create_technical_analysis_agent(self) -> Agent:
+    def create_technical_analysis_agent(self, tools: list = None) -> Agent:
         """Create technical analysis agent.
+
+        Args:
+            tools: List of tools available to the agent
 
         Returns:
             Configured CrewAI Agent for technical analysis
@@ -59,26 +65,32 @@ class CrewAIAgentFactory:
         return Agent(
             role="Senior Technical Analyst",
             goal=(
-                "Analyze price charts and technical indicators to identify trading opportunities, "
-                "trend strength, support/resistance levels, and potential entry/exit points"
+                "Interpret pre-calculated technical indicators to provide insights on "
+                "trend strength, momentum, support/resistance levels, and trading opportunities"
             ),
             backstory=(
-                "You are a skilled technical analyst with expertise in chart patterns, "
-                "moving averages, momentum indicators, and volume analysis. "
-                "You use technical indicators to identify trend strength, reversals, and "
-                "support/resistance levels. Your analysis incorporates multiple timeframes "
+                "You are a skilled technical analyst with expertise in interpreting "
+                "chart patterns, moving averages, momentum indicators, and volume analysis. "
+                "You receive pre-calculated technical indicators (RSI, MACD, SMA, ATR, etc.) "
+                "and provide expert interpretation of what these signals mean. "
+                "You identify trend strength, potential reversals, overbought/oversold conditions, "
+                "and support/resistance levels. Your analysis incorporates multiple timeframes "
                 "and helps traders make informed decisions based on price action. "
                 "You understand how different indicators complement each other and provide "
-                "holistic technical insights."
+                "holistic technical insights. Note: The mathematical calculations are already done - "
+                "your job is to interpret the signals and provide trading insights."
             ),
-            tools=[],  # Tools will be added separately
+            tools=tools or [],
             llm=self.llm_client,
             verbose=False,
             allow_delegation=False,
         )
 
-    def create_fundamental_analysis_agent(self) -> Agent:
+    def create_fundamental_analysis_agent(self, tools: list = None) -> Agent:
         """Create fundamental analysis agent.
+
+        Args:
+            tools: List of tools available to the agent
 
         Returns:
             Configured CrewAI Agent for fundamental analysis
@@ -98,14 +110,17 @@ class CrewAIAgentFactory:
                 "companies even if they appear cheap. You understand industry dynamics and "
                 "competitive positioning."
             ),
-            tools=[],  # Tools will be added separately
+            tools=tools or [],
             llm=self.llm_client,
             verbose=False,
             allow_delegation=False,
         )
 
-    def create_sentiment_analysis_agent(self) -> Agent:
+    def create_sentiment_analysis_agent(self, tools: list = None) -> Agent:
         """Create sentiment analysis agent.
+
+        Args:
+            tools: List of tools available to the agent
 
         Returns:
             Configured CrewAI Agent for sentiment analysis
@@ -113,19 +128,20 @@ class CrewAIAgentFactory:
         return Agent(
             role="Sentiment Analyst",
             goal=(
-                "Analyze news, events, and market sentiment to assess how external factors "
-                "impact investment thesis. Identify key events and their implications."
+                "Analyze news article sentiment and identify how news events "
+                "and market sentiment impact the investment thesis."
             ),
             backstory=(
-                "You are a skilled sentiment analyst with expertise in news analysis, event "
-                "classification, and market sentiment assessment. "
-                "You process recent news articles to filter by relevance, extract key events, "
-                "and score sentiment (positive/negative/neutral). "
-                "You understand how different types of events (earnings, regulatory, competitive) "
-                "impact company valuations and stock prices. "
-                "You weight event importance and assess market reaction likelihood."
+                "You are a skilled sentiment analyst with expertise in natural language processing, "
+                "news interpretation, and market psychology. "
+                "You analyze news article titles and summaries to determine sentiment (positive/negative/neutral) "
+                "and assign sentiment scores. You classify events by type (earnings, regulatory, product launches, "
+                "competitive, macro) and assess their importance and potential market impact. "
+                "You understand how different types of news affect company valuations and stock prices, "
+                "and can identify whether sentiment represents rational analysis or emotional overreaction. "
+                "You excel at identifying key themes, catalysts, and sentiment trends from news coverage."
             ),
-            tools=[],  # Tools will be added separately
+            tools=tools or [],
             llm=self.llm_client,
             verbose=False,
             allow_delegation=False,
@@ -218,27 +234,28 @@ class CrewAITaskFactory:
         """
         return Task(
             description=(
-                f"Perform comprehensive technical analysis of {ticker}.\n"
+                f"Interpret the pre-calculated technical indicators for {ticker}.\n"
                 f"\n"
-                f"Analyze the following indicators:\n"
-                f"- Moving averages (SMA 20, 50, 200)\n"
-                f"- Momentum (RSI 14, MACD)\n"
-                f"- Volatility (ATR)\n"
-                f"- Volume trends\n"
+                f"IMPORTANT: Use the 'Calculate Technical Indicators' tool with ticker='{ticker}' "
+                f"to get the pre-computed technical analysis. This tool performs all mathematical "
+                f"calculations (SMA, RSI, MACD, ATR, volume trends) using rule-based algorithms.\n"
                 f"\n"
-                f"Assess:\n"
-                f"1. Current trend (uptrend, downtrend, range-bound)\n"
-                f"2. Trend strength and momentum\n"
-                f"3. Support and resistance levels\n"
-                f"4. Chart patterns and formations\n"
-                f"5. Entry and exit points\n"
+                f"Your job is to INTERPRET these calculated values:\n"
+                f"1. Analyze the trend (is the price above/below key moving averages?)\n"
+                f"2. Assess momentum (what do RSI and MACD values indicate?)\n"
+                f"3. Identify overbought/oversold conditions (RSI > 70 or < 30?)\n"
+                f"4. Evaluate volume patterns (is there unusual volume?)\n"
+                f"5. Determine support/resistance levels from moving averages\n"
+                f"6. Identify potential entry/exit points\n"
+                f"7. Assess overall technical strength and provide a score (0-100)\n"
                 f"\n"
-                f"Provide a technical score (0-100) and reasoning."
+                f"Do NOT try to calculate indicators yourself - they are already calculated. "
+                f"Focus on interpretation and insight."
             ),
             agent=agent,
             expected_output=(
-                "Structured technical analysis with trend assessment, indicator readings, "
-                "and technical score (0-100)"
+                "Technical analysis interpretation with trend assessment, momentum analysis, "
+                "signal interpretation, and technical score (0-100)"
             ),
         )
 
@@ -303,26 +320,31 @@ class CrewAITaskFactory:
         """
         return Task(
             description=(
-                f"Analyze sentiment and news for {ticker}.\n"
+                f"Analyze news sentiment for {ticker}.\n"
                 f"\n"
-                f"Process recent news (last 7 days):\n"
-                f"1. Classify articles by category (earnings, regulatory, product, competitive, macro)\n"
-                f"2. Assess sentiment (positive, negative, neutral)\n"
-                f"3. Evaluate importance and potential market impact\n"
-                f"4. Extract key themes and events\n"
+                f"Use the 'Analyze Sentiment' tool with ticker='{ticker}' to fetch recent news articles.\n"
                 f"\n"
-                f"Assess:\n"
-                f"1. Overall sentiment trend\n"
-                f"2. Key catalysts and their implications\n"
-                f"3. Analyst sentiment (if available)\n"
-                f"4. Analyst rating changes\n"
+                f"For each article, analyze the title and summary to:\n"
+                f"1. Determine sentiment: positive, negative, or neutral\n"
+                f"2. Assign a sentiment score (-1.0 to +1.0)\n"
+                f"3. Classify the event type (earnings, product launch, partnership, regulatory, competitive, etc.)\n"
+                f"4. Assess importance/impact (0-100)\n"
                 f"\n"
-                f"Provide sentiment score (0-100) and narrative."
+                f"Then synthesize the analysis:\n"
+                f"1. Calculate overall sentiment distribution (% positive/negative/neutral)\n"
+                f"2. Identify major themes and patterns\n"
+                f"3. Highlight key catalysts or events\n"
+                f"4. Assess whether sentiment aligns with or contradicts fundamentals\n"
+                f"5. Determine if there are any sentiment shifts or trends\n"
+                f"6. Provide an overall sentiment score (0-100)\n"
+                f"\n"
+                f"Focus on quality analysis - sentiment classification requires understanding context, "
+                f"not just keyword matching."
             ),
             agent=agent,
             expected_output=(
-                "Sentiment analysis with key news items, sentiment classification, "
-                "impact assessment, and sentiment score (0-100)"
+                "Sentiment analysis with article-level sentiment scores, key themes, event classification, "
+                "overall sentiment distribution, and final sentiment score (0-100)"
             ),
         )
 
@@ -348,7 +370,7 @@ class CrewAITaskFactory:
         """
         return Task(
             description=(
-                f"Synthesize all analyses for {ticker} into investment signal.\n"
+                f"Synthesize all analyses for {ticker} into a structured investment signal.\n"
                 f"\n"
                 f"Technical Analysis Results:\n"
                 f"{technical_analysis}\n"
@@ -359,18 +381,50 @@ class CrewAITaskFactory:
                 f"Sentiment Analysis Results:\n"
                 f"{sentiment_analysis}\n"
                 f"\n"
-                f"Synthesize into:\n"
-                f"1. Combined investment score (apply weights: fundamental 35%, technical 35%, sentiment 30%)\n"
-                f"2. Clear recommendation (Buy, Hold, Avoid)\n"
-                f"3. Confidence assessment (0-100%)\n"
-                f"4. Key investment thesis\n"
-                f"5. Risk factors\n"
-                f"6. Time horizon\n"
-                f"7. Expected return range\n"
+                f"You must output ONLY a valid JSON object (no markdown, no extra text) with this exact structure:\n"
+                f"{{\n"
+                f'  "ticker": "{ticker}",\n'
+                f'  "name": "Company Name",\n'
+                f'  "market": "Market Name",\n'
+                f'  "sector": "Sector or null",\n'
+                f'  "current_price": 123.45,\n'
+                f'  "currency": "USD",\n'
+                f'  "scores": {{\n'
+                f'    "technical": 0-100,\n'
+                f'    "fundamental": 0-100,\n'
+                f'    "sentiment": 0-100\n'
+                f"  }},\n"
+                f'  "final_score": 0-100 (weighted: fundamental 35%, technical 35%, sentiment 30%),\n'
+                f'  "recommendation": "strong_buy|buy|hold_bullish|hold|hold_bearish|sell|strong_sell",\n'
+                f'  "confidence": 0-100,\n'
+                f'  "time_horizon": "1W|1M|3M|6M|1Y",\n'
+                f'  "expected_return_min": -100 to 500,\n'
+                f'  "expected_return_max": -100 to 500,\n'
+                f'  "key_reasons": ["reason1", "reason2", "reason3"],\n'
+                f'  "risk": {{\n'
+                f'    "level": "low|medium|high|very_high",\n'
+                f'    "volatility": "low|normal|high",\n'
+                f'    "volatility_pct": 0.0-100.0,\n'
+                f'    "liquidity": "illiquid|normal|highly_liquid",\n'
+                f'    "concentration_risk": true|false,\n'
+                f'    "sector_risk": "sector-specific risks or null",\n'
+                f'    "flags": ["risk_flag1", "risk_flag2"]\n'
+                f"  }},\n"
+                f'  "rationale": "Detailed investment thesis",\n'
+                f'  "caveats": ["caveat1", "caveat2"]\n'
+                f"}}\n"
+                f"\n"
+                f"Guidelines:\n"
+                f"- Use scores from each analysis component\n"
+                f"- Calculate final_score with weights: fundamental 35%, technical 35%, sentiment 30%\n"
+                f"- Recommendation based on final_score: >80=strong_buy, 70-80=buy, 60-70=hold_bullish, "
+                f"50-60=hold, 40-50=hold_bearish, 30-40=sell, <30=strong_sell\n"
+                f"- Set confidence based on agreement between analyses\n"
+                f"- Extract current_price from technical analysis\n"
+                f"- Return ONLY the JSON object, nothing else\n"
             ),
             agent=agent,
             expected_output=(
-                "Investment signal with combined score, recommendation, confidence, thesis, risks, "
-                "time horizon, and expected return"
+                "Valid JSON object matching the InvestmentSignal schema with all required fields populated"
             ),
         )

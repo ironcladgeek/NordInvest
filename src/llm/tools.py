@@ -1,12 +1,29 @@
 """CrewAI tool adapters for analysis functions."""
 
-from typing import Callable
+import json
+from datetime import date, datetime
+
+from crewai.tools import tool
 
 from src.tools.analysis import TechnicalIndicatorTool
 from src.tools.fetchers import NewsFetcherTool, PriceFetcherTool
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def json_serial(obj):
+    """JSON serializer for objects not serializable by default json code.
+
+    Args:
+        obj: Object to serialize
+
+    Returns:
+        Serialized representation
+    """
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    raise TypeError(f"Type {type(obj)} not serializable")
 
 
 class CrewAIToolAdapter:
@@ -17,85 +34,172 @@ class CrewAIToolAdapter:
         self.price_fetcher = PriceFetcherTool()
         self.technical_tool = TechnicalIndicatorTool()
         self.news_fetcher = NewsFetcherTool()
+        # Cache to store data between tool calls
+        self._data_cache = {}
+        # Initialize tools once
+        self._tools = self._create_tools()
 
-    def fetch_price_data(self, ticker: str, days_back: int = 60) -> str:
-        """Fetch historical and current price data for an instrument.
-
-        Args:
-            ticker: Stock ticker symbol
-            days_back: Number of days of history to fetch
-
-        Returns:
-            JSON string with price data including OHLCV
-        """
-        try:
-            result = self.price_fetcher.run(ticker, days_back=days_back)
-            if "error" in result:
-                return f"Error fetching price data: {result['error']}"
-            return str(result)
-        except Exception as e:
-            logger.error(f"Error fetching price data for {ticker}: {e}")
-            return f"Error: {str(e)}"
-
-    def calculate_technical_indicators(self, price_data: str) -> str:
-        """Calculate technical indicators from price data.
-
-        Args:
-            price_data: Price data as JSON string or dict
+    def _create_tools(self) -> list:
+        """Create CrewAI-compatible tools.
 
         Returns:
-            JSON string with calculated indicators (SMA, RSI, MACD, ATR, etc.)
+            List of CrewAI tool instances
         """
-        try:
-            import json
 
-            if isinstance(price_data, str):
-                prices = json.loads(price_data)
-            else:
-                prices = price_data
+        @tool("Fetch Price Data")
+        def fetch_price_data(ticker: str, days_back: int = 60) -> str:
+            """Fetch historical and current price data for an instrument.
 
-            # Extract price list if wrapped
-            if isinstance(prices, dict):
-                prices = prices.get("prices", [])
+            Args:
+                ticker: Stock ticker symbol
+                days_back: Number of days of history to fetch
 
-            result = self.technical_tool.run(prices)
-            if "error" in result:
-                return f"Error calculating indicators: {result['error']}"
-            return str(result)
-        except Exception as e:
-            logger.error(f"Error calculating technical indicators: {e}")
-            return f"Error: {str(e)}"
+            Returns:
+                JSON string with summary of price data (full data cached for other tools)
+            """
+            try:
+                result = self.price_fetcher.run(ticker, days_back=days_back)
+                if "error" in result:
+                    return json.dumps({"error": result["error"]})
 
-    def fetch_news(self, ticker: str, max_articles: int = 10, max_age_hours: int = 168) -> str:
-        """Fetch recent news articles for an instrument.
+                # Store full data in cache for technical analysis
+                cache_key = f"prices_{ticker}"
+                self._data_cache[cache_key] = result.get("prices", [])
 
-        Args:
-            ticker: Stock ticker symbol
-            max_articles: Maximum number of articles to fetch
-            max_age_hours: Maximum age of articles in hours
+                # Return only summary to avoid truncation
+                summary = {
+                    "ticker": result.get("ticker"),
+                    "count": result.get("count", 0),
+                    "start_date": result.get("start_date"),
+                    "end_date": result.get("end_date"),
+                    "latest_price": result.get("latest_price"),
+                    "cache_key": cache_key,
+                    "message": f"Fetched {result.get('count', 0)} price data points. Use cache_key '{cache_key}' for technical analysis.",
+                }
 
-        Returns:
-            JSON string with news articles and sentiment
-        """
-        try:
-            result = self.news_fetcher.run(
-                ticker, max_articles=max_articles, max_age_hours=max_age_hours
-            )
-            if "error" in result:
-                return f"Error fetching news: {result['error']}"
-            return str(result)
-        except Exception as e:
-            logger.error(f"Error fetching news for {ticker}: {e}")
-            return f"Error: {str(e)}"
+                return json.dumps(summary, default=json_serial)
+            except Exception as e:
+                logger.error(f"Error fetching price data for {ticker}: {e}")
+                return json.dumps({"error": str(e)})
 
-    def get_crewai_tools(self) -> list[Callable]:
+        @tool("Calculate Technical Indicators")
+        def calculate_technical_indicators(ticker: str) -> str:
+            """Calculate technical indicators and return pre-computed analysis.
+
+            This tool performs the mathematical calculations directly (rule-based)
+            and returns the results for LLM interpretation.
+
+            Args:
+                ticker: Stock ticker symbol
+
+            Returns:
+                JSON string with calculated indicators and automated technical analysis
+            """
+            try:
+                # Use cached price data
+                cache_key = f"prices_{ticker}"
+                if cache_key not in self._data_cache:
+                    return json.dumps(
+                        {
+                            "error": f"No price data cached for {ticker}. Call fetch_price_data first."
+                        }
+                    )
+
+                prices = self._data_cache[cache_key]
+                if not prices:
+                    return json.dumps({"error": "No price data available"})
+
+                # Perform rule-based technical analysis calculations
+                result = self.technical_tool.run(prices)
+                if "error" in result:
+                    return json.dumps({"error": result["error"]})
+
+                # Add interpretation hints for the LLM (but calculations are done)
+                result["analysis_type"] = "rule_based_calculations"
+                result["note"] = (
+                    "Technical indicators calculated using mathematical formulas. LLM should interpret these signals."
+                )
+
+                return json.dumps(result, default=json_serial)
+            except Exception as e:
+                logger.error(f"Error calculating technical indicators: {e}")
+                return json.dumps({"error": str(e)})
+
+        @tool("Analyze Sentiment")
+        def analyze_sentiment(ticker: str, max_articles: int = 50, max_age_hours: int = 168) -> str:
+            """Fetch news and perform LLM-based sentiment analysis.
+
+            This tool fetches news articles and uses LLM to analyze sentiment
+            (since providers often don't include sentiment data).
+
+            Args:
+                ticker: Stock ticker symbol
+                max_articles: Maximum number of articles to fetch
+                max_age_hours: Maximum age of articles in hours
+
+            Returns:
+                JSON string with news articles for LLM sentiment analysis
+            """
+            try:
+                # Fetch news articles
+                news_result = self.news_fetcher.run(
+                    ticker, limit=max_articles, max_age_hours=max_age_hours
+                )
+                if "error" in news_result:
+                    return json.dumps({"error": news_result["error"]})
+
+                articles = news_result.get("articles", [])
+
+                if not articles:
+                    return json.dumps(
+                        {
+                            "ticker": ticker,
+                            "articles": [],
+                            "count": 0,
+                            "note": "No news articles found for analysis",
+                        }
+                    )
+
+                # Prepare articles for LLM analysis (limit fields to avoid truncation)
+                articles_for_analysis = [
+                    {
+                        "title": a.get("title", ""),
+                        "summary": (
+                            a.get("summary", "")[:200] if a.get("summary") else ""
+                        ),  # Limit summary length
+                        "source": a.get("source", ""),
+                        "published_date": a.get("published_date"),
+                    }
+                    for a in articles[:20]  # Limit to 20 most recent to avoid truncation
+                ]
+
+                result = {
+                    "ticker": ticker,
+                    "articles": articles_for_analysis,
+                    "total_articles": len(articles),
+                    "analysis_type": "llm_sentiment_analysis_required",
+                    "note": (
+                        "Articles fetched successfully. LLM should analyze each article's title and summary "
+                        "to determine sentiment (positive/negative/neutral), score each article, identify "
+                        "key themes and events, and provide an overall sentiment assessment."
+                    ),
+                }
+
+                return json.dumps(result, default=json_serial)
+            except Exception as e:
+                logger.error(f"Error analyzing sentiment for {ticker}: {e}")
+                return json.dumps({"error": str(e)})
+
+        return [
+            fetch_price_data,
+            calculate_technical_indicators,
+            analyze_sentiment,
+        ]
+
+    def get_crewai_tools(self) -> list:
         """Get all tools as CrewAI-compatible tool list.
 
         Returns:
-            List of tool functions
+            List of CrewAI tool instances
         """
-        return [
-            self.fetch_price_data,
-            self.calculate_technical_indicators,
-            self.fetch_news,
-        ]
+        return self._tools

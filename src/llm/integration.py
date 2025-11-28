@@ -1,5 +1,8 @@
 """High-level integration of CrewAI and hybrid intelligence system."""
 
+import json
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Optional
 
 from src.agents.analysis import (
@@ -26,6 +29,7 @@ class LLMAnalysisOrchestrator:
         llm_config: Optional[LLMConfig] = None,
         token_tracker: Optional[TokenTracker] = None,
         enable_fallback: bool = True,
+        debug_dir: Optional[Path] = None,
     ):
         """Initialize analysis orchestrator.
 
@@ -33,10 +37,17 @@ class LLMAnalysisOrchestrator:
             llm_config: LLM configuration
             token_tracker: Token usage tracker
             enable_fallback: Enable fallback to rule-based analysis
+            debug_dir: Directory to save debug outputs (inputs/outputs from LLM)
         """
         self.llm_config = llm_config or LLMConfig()
         self.token_tracker = token_tracker
         self.enable_fallback = enable_fallback
+        self.debug_dir = debug_dir
+
+        # Create debug directory if needed
+        if self.debug_dir:
+            self.debug_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"LLM debug mode enabled: outputs will be saved to {self.debug_dir}")
 
         # Initialize CrewAI components
         self.agent_factory = CrewAIAgentFactory(self.llm_config)
@@ -55,17 +66,15 @@ class LLMAnalysisOrchestrator:
         Returns:
             Dictionary mapping agent names to HybridAnalysisAgent instances
         """
-        # Create CrewAI agents
-        market_scanner_crew = self.agent_factory.create_market_scanner_agent()
-        technical_crew = self.agent_factory.create_technical_analysis_agent()
-        fundamental_crew = self.agent_factory.create_fundamental_analysis_agent()
-        sentiment_crew = self.agent_factory.create_sentiment_analysis_agent()
-        synthesizer_crew = self.agent_factory.create_signal_synthesizer_agent()
-
-        # Attach tools to CrewAI agents
+        # Get tools before creating agents
         tools = self.tool_adapter.get_crewai_tools()
-        for agent in [market_scanner_crew, technical_crew, fundamental_crew, sentiment_crew]:
-            agent.tools = tools
+
+        # Create CrewAI agents with tools
+        market_scanner_crew = self.agent_factory.create_market_scanner_agent(tools)
+        technical_crew = self.agent_factory.create_technical_analysis_agent(tools)
+        fundamental_crew = self.agent_factory.create_fundamental_analysis_agent(tools)
+        sentiment_crew = self.agent_factory.create_sentiment_analysis_agent(tools)
+        synthesizer_crew = self.agent_factory.create_signal_synthesizer_agent()
 
         # Create fallback rule-based agents
         market_scanner_fallback = MarketScannerAgent()
@@ -101,6 +110,38 @@ class LLMAnalysisOrchestrator:
             ),
         }
 
+    def _save_debug_data(self, ticker: str, stage: str, data: Any) -> None:
+        """Save debug data to disk.
+
+        Args:
+            ticker: Stock ticker
+            stage: Analysis stage (input/output/synthesis_input/synthesis_output)
+            data: Data to save
+        """
+        if not self.debug_dir:
+            return
+
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{ticker}_{stage}_{timestamp}.json"
+            filepath = self.debug_dir / filename
+
+            # Convert data to JSON-serializable format
+            def json_serial(obj):
+                """JSON serializer for objects not serializable by default."""
+                if isinstance(obj, datetime):
+                    return obj.isoformat()
+                if hasattr(obj, "__dict__"):
+                    return obj.__dict__
+                return str(obj)
+
+            with open(filepath, "w") as f:
+                json.dump(data, f, indent=2, default=json_serial)
+
+            logger.debug(f"Saved debug data: {filepath}")
+        except Exception as e:
+            logger.warning(f"Failed to save debug data for {ticker} ({stage}): {e}")
+
     def analyze_instrument(
         self,
         ticker: str,
@@ -113,12 +154,16 @@ class LLMAnalysisOrchestrator:
             context: Additional context for analysis
 
         Returns:
-            Analysis results from all agents
+            Analysis results from all agents including synthesis
         """
         context = context or {}
         context["ticker"] = ticker
 
         logger.info(f"Starting comprehensive analysis for {ticker}")
+
+        # Save debug: input context
+        if self.debug_dir:
+            self._save_debug_data(ticker, "input_context", context)
 
         # Create tasks for each agent
         market_scan_task = self.task_factory.create_market_scan_task(
@@ -137,6 +182,19 @@ class LLMAnalysisOrchestrator:
             self.hybrid_agents["sentiment"].crewai_agent, ticker, context
         )
 
+        # Save debug: task descriptions
+        if self.debug_dir:
+            self._save_debug_data(
+                ticker,
+                "task_inputs",
+                {
+                    "market_scan": market_scan_task.description,
+                    "technical": technical_task.description,
+                    "fundamental": fundamental_task.description,
+                    "sentiment": sentiment_task.description,
+                },
+            )
+
         # Execute analysis tasks
         tasks = {
             "market_scan": market_scan_task,
@@ -145,11 +203,47 @@ class LLMAnalysisOrchestrator:
             "sentiment_analysis": sentiment_task,
         }
 
-        results = self.crew.execute_analysis(tasks, context)
+        analysis_results = self.crew.execute_analysis(tasks, context)
+
+        # Save debug: analysis outputs
+        if self.debug_dir:
+            self._save_debug_data(ticker, "analysis_outputs", analysis_results)
+
+        # Extract individual analysis results for synthesis
+        technical_results = analysis_results.get("results", {}).get("technical_analysis", {})
+        fundamental_results = analysis_results.get("results", {}).get("fundamental_analysis", {})
+        sentiment_results = analysis_results.get("results", {}).get("sentiment_analysis", {})
+
+        # Synthesize signal if all analyses succeeded
+        if (
+            technical_results.get("status") == "success"
+            and fundamental_results.get("status") == "success"
+            and sentiment_results.get("status") == "success"
+        ):
+            synthesis_result = self.synthesize_signal(
+                ticker,
+                technical_results.get("result", {}),
+                fundamental_results.get("result", {}),
+                sentiment_results.get("result", {}),
+            )
+
+            # Add synthesis to results
+            analysis_results["results"]["synthesis"] = synthesis_result
+        else:
+            logger.warning(
+                f"Skipping synthesis for {ticker} - not all analyses succeeded. "
+                f"Technical: {technical_results.get('status')}, "
+                f"Fundamental: {fundamental_results.get('status')}, "
+                f"Sentiment: {sentiment_results.get('status')}"
+            )
+            analysis_results["results"]["synthesis"] = {
+                "status": "skipped",
+                "reason": "prerequisite analyses failed",
+            }
 
         logger.info(f"Analysis complete for {ticker}")
 
-        return results
+        return analysis_results
 
     def synthesize_signal(
         self,
@@ -170,6 +264,18 @@ class LLMAnalysisOrchestrator:
             Investment signal with recommendation
         """
         logger.info(f"Synthesizing investment signal for {ticker}")
+
+        # Save debug: synthesis inputs
+        if self.debug_dir:
+            self._save_debug_data(
+                ticker,
+                "synthesis_input",
+                {
+                    "technical": technical_results,
+                    "fundamental": fundamental_results,
+                    "sentiment": sentiment_results,
+                },
+            )
 
         # Create synthesis task
         synthesizer_agent = self.hybrid_agents.get("synthesizer")
@@ -195,7 +301,22 @@ class LLMAnalysisOrchestrator:
             sentiment_results,
         )
 
+        # Save debug: synthesis task description
+        if self.debug_dir:
+            self._save_debug_data(
+                ticker,
+                "synthesis_task",
+                {
+                    "description": synthesis_task.description,
+                    "expected_output": synthesis_task.expected_output,
+                },
+            )
+
         result = synthesizer_hybrid.execute_task(synthesis_task)
+
+        # Save debug: synthesis output
+        if self.debug_dir:
+            self._save_debug_data(ticker, "synthesis_output", result)
 
         logger.info(f"Signal synthesis complete for {ticker}")
 
