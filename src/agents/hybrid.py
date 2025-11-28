@@ -181,12 +181,14 @@ class HybridAnalysisCrew:
         self,
         tasks: dict[str, Task],
         context: dict[str, Any] = None,
+        progress_callback: Optional[callable] = None,
     ) -> dict[str, Any]:
         """Execute analysis with all agents.
 
         Args:
             tasks: Dictionary mapping task names to Task objects
             context: Additional context
+            progress_callback: Optional callback function(current, total, task_name) for progress updates
 
         Returns:
             Combined analysis results
@@ -196,7 +198,8 @@ class HybridAnalysisCrew:
 
         logger.info(f"Starting hybrid crew analysis with {len(tasks)} tasks")
 
-        for task_name, task in tasks.items():
+        total_tasks = len(tasks)
+        for idx, (task_name, task) in enumerate(tasks.items(), 1):
             # Find appropriate agent for this task
             agent_key = None
             for key in self.hybrid_agents.keys():
@@ -207,13 +210,23 @@ class HybridAnalysisCrew:
             if not agent_key:
                 logger.warning(f"No agent found for task: {task_name}")
                 results[task_name] = {"status": "skipped", "reason": "No matching agent"}
+                if progress_callback:
+                    progress_callback(idx, total_tasks, task_name)
                 continue
 
             hybrid_agent = self.hybrid_agents[agent_key]
             logger.debug(f"Executing task {task_name} with agent {agent_key}")
 
+            # Call progress callback before executing task
+            if progress_callback:
+                progress_callback(idx - 1, total_tasks, task_name)
+
             result = hybrid_agent.execute_task(task, context)
             results[task_name] = result
+
+            # Call progress callback after executing task
+            if progress_callback:
+                progress_callback(idx, total_tasks, task_name)
 
             # Log execution
             self.execution_log.append(
