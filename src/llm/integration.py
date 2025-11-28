@@ -272,7 +272,7 @@ class LLMAnalysisOrchestrator:
 
         # Notify progress
         if self.progress_callback:
-            self.progress_callback(f"  🔄 Synthesizing investment signal...")
+            self.progress_callback("  🔄 Synthesizing investment signal...")
 
         # Save debug: synthesis inputs
         if self.debug_dir:
@@ -323,7 +323,7 @@ class LLMAnalysisOrchestrator:
 
         # Notify start
         if self.progress_callback:
-            self.progress_callback(f"  → Synthesizing investment signal...")
+            self.progress_callback("  → Synthesizing investment signal...")
 
         result = synthesizer_hybrid.execute_task(synthesis_task)
 
@@ -333,7 +333,7 @@ class LLMAnalysisOrchestrator:
 
         # Notify completion
         if self.progress_callback:
-            self.progress_callback(f"  ✓ Signal synthesis complete")
+            self.progress_callback("  ✓ Signal synthesis complete")
 
         logger.info(f"Signal synthesis complete for {ticker}")
 

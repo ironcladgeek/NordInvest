@@ -58,7 +58,7 @@ def _run_llm_analysis(
         if debug_llm:
             debug_dir = data_dir / "llm_debug" / datetime.now().strftime("%Y%m%d_%H%M%S")
             debug_dir.mkdir(parents=True, exist_ok=True)
-            typer_instance.echo(f"  LLM debug mode: enabled")
+            typer_instance.echo("  LLM debug mode: enabled")
             typer_instance.echo(f"  Debug outputs: {debug_dir}")
 
         # Create progress callback for synthesis stage
@@ -77,7 +77,7 @@ def _run_llm_analysis(
         typer_instance.echo(f"  LLM Provider: {config_obj.llm.provider}")
         typer_instance.echo(f"  Model: {config_obj.llm.model}")
         typer_instance.echo(f"  Temperature: {config_obj.llm.temperature}")
-        typer_instance.echo(f"  Token tracking: enabled")
+        typer_instance.echo("  Token tracking: enabled")
 
         # Analyze each ticker with LLM
         signals = []
@@ -137,7 +137,7 @@ def _run_llm_analysis(
         # Log token usage summary
         daily_stats = tracker.get_daily_stats()
         if daily_stats:
-            typer_instance.echo(f"\n💰 Token Usage Summary:")
+            typer_instance.echo("\n💰 Token Usage Summary:")
             typer_instance.echo(f"  Input tokens: {daily_stats.total_input_tokens:,}")
             typer_instance.echo(f"  Output tokens: {daily_stats.total_output_tokens:,}")
             typer_instance.echo(f"  Cost: €{daily_stats.total_cost_eur:.2f}")
@@ -187,13 +187,13 @@ def _create_signal_from_llm_result(
                     json_str = llm_result[first_brace : last_brace + 1]
                     try:
                         llm_result = json.loads(json_str)
-                        logger.debug(f"Successfully extracted JSON from LLM response")
+                        logger.debug("Successfully extracted JSON from LLM response")
                     except json.JSONDecodeError as e:
                         logger.warning(f"Could not parse extracted JSON: {e}")
                         logger.debug(f"Attempted to parse: {json_str[:500]}")
                         return None
                 else:
-                    logger.warning(f"No JSON object found in LLM result")
+                    logger.warning("No JSON object found in LLM result")
                     logger.debug(f"Response preview: {llm_result[:200]}")
                     return None
 
