@@ -204,8 +204,8 @@ class LLMConfig(BaseModel):
         description="LLM provider: anthropic, openai, or local",
     )
     model: str = Field(
-        default="claude-3-5-sonnet-20241022",
-        description="Model identifier (e.g., claude-3-5-sonnet, gpt-4, etc.)",
+        default="claude-sonnet-4-20250514",
+        description="Model identifier (e.g., claude-sonnet-4-20250514, gpt-4, etc.)",
     )
     temperature: float = Field(
         default=0.7, ge=0.0, le=2.0, description="Temperature for generation (0.0-2.0)"
