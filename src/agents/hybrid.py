@@ -56,8 +56,16 @@ class HybridAnalysisAgent:
         try:
             logger.debug(f"Executing LLM task: {task.description[:50]}...")
 
-            # Execute using minimal crew
-            crew = Crew(agents=[self.crewai_agent], tasks=[task], verbose=False)
+            # Get the LLM from the agent
+            agent_llm = self.crewai_agent.llm if hasattr(self.crewai_agent, "llm") else None
+
+            # Execute using minimal crew with explicit model configuration
+            crew = Crew(
+                agents=[self.crewai_agent],
+                tasks=[task],
+                verbose=False,
+                manager_llm=agent_llm,  # Ensure crew uses the same LLM
+            )
             result = crew.kickoff(inputs=context)
 
             # Track token usage (approximate)
