@@ -208,3 +208,68 @@ class TestFundamentalAnalyzer:
         assert analyst_score > 95  # Strong buy consensus
         assert momentum_score == 50  # Neutral
         assert 70 < overall_score < 80  # Average between 100 and 50
+
+    def test_calculate_enhanced_score_with_metrics(self):
+        """Test enhanced scoring with yfinance metrics."""
+        analyst_data = {
+            "strong_buy": 8,
+            "buy": 10,
+            "hold": 2,
+            "sell": 0,
+            "strong_sell": 0,
+            "total_analysts": 20,
+        }
+        price_context = {"change_percent": 0.05, "trend": "bullish"}
+        metrics_data = {
+            "valuation": {
+                "trailing_pe": 18.0,
+                "price_to_book": 2.2,
+            },
+            "profitability": {
+                "profit_margin": 0.15,
+                "return_on_equity": 0.18,
+            },
+            "financial_health": {
+                "debt_to_equity": 0.5,
+                "current_ratio": 2.0,
+            },
+            "growth": {
+                "revenue_growth": 0.12,
+                "earnings_growth": 0.15,
+            },
+        }
+
+        result = FundamentalAnalyzer.calculate_enhanced_score(
+            analyst_data, price_context, sentiment_score=55, metrics_data=metrics_data
+        )
+
+        assert "overall_score" in result
+        assert "baseline_score" in result
+        assert "metrics_score" in result
+        assert result["overall_score"] > 50  # Should be positive
+        # Overall should be 60% baseline + 40% metrics
+        assert 50 < result["overall_score"] < 80
+
+    def test_calculate_enhanced_score_without_metrics(self):
+        """Test enhanced scoring when metrics are unavailable."""
+        analyst_data = {
+            "strong_buy": 8,
+            "buy": 10,
+            "hold": 2,
+            "sell": 0,
+            "strong_sell": 0,
+            "total_analysts": 20,
+        }
+        price_context = {"change_percent": 0.05, "trend": "bullish"}
+
+        result = FundamentalAnalyzer.calculate_enhanced_score(
+            analyst_data, price_context, sentiment_score=55, metrics_data=None
+        )
+
+        assert "overall_score" in result
+        assert "baseline_score" in result
+        assert "metrics_score" in result
+        # Metrics should default to 50 (neutral) if unavailable
+        assert result["metrics_score"] == 50
+        # Overall should still be calculated
+        assert result["overall_score"] > 0

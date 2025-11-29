@@ -269,36 +269,50 @@ class FundamentalAnalysisAgent(BaseAgent):
             # Extract data sources from free tier endpoints
             analyst_data = fundamental_data.get("analyst_data", {})
             price_context = fundamental_data.get("price_context", {})
+            metrics_data = fundamental_data.get("metrics", {})
 
-            # Calculate fundamental score from free tier data
+            # Calculate enhanced fundamental score with metrics
             # Note: Sentiment is analyzed separately by News & Sentiment Agent
-            scoring_result = FundamentalAnalyzer.calculate_score(
+            scoring_result = FundamentalAnalyzer.calculate_enhanced_score(
                 analyst_data=analyst_data,
                 price_context=price_context,
                 sentiment_score=None,  # Will default to 50 (neutral)
+                metrics_data=metrics_data,  # yfinance metrics
             )
 
             result = {
                 "status": "success",
                 "ticker": ticker,
                 "fundamental_score": scoring_result["overall_score"],
+                "baseline_score": scoring_result["baseline_score"],
+                "metrics_score": scoring_result["metrics_score"],
                 "scoring_details": scoring_result,
                 "components": {
-                    "analyst_consensus": scoring_result["analyst_score"],
-                    "momentum": scoring_result["momentum_score"],
-                    "sentiment": {
-                        "score": scoring_result["sentiment_score"],
-                        "note": "Analyzed by News & Sentiment Agent (CrewAI/LLM)",
+                    "baseline": {
+                        "analyst_consensus": scoring_result["analyst_score"],
+                        "momentum": scoring_result["momentum_score"],
+                        "sentiment": {
+                            "score": scoring_result["sentiment_score"],
+                            "note": "Analyzed by News & Sentiment Agent (CrewAI/LLM)",
+                        },
+                    },
+                    "metrics": {
+                        "valuation": scoring_result["valuation_score"],
+                        "profitability": scoring_result["profitability_score"],
+                        "financial_health": scoring_result["financial_health_score"],
+                        "growth": scoring_result["growth_score"],
+                        "note": "From yfinance free tier data",
                     },
                 },
                 "data_sources": {
                     "analyst": analyst_data,
                     "price_context": price_context,
+                    "metrics": metrics_data,
                 },
                 "recommendation": FundamentalAnalyzer.get_recommendation(
                     scoring_result["overall_score"]
                 ),
-                "note": "Uses free tier APIs only - analyst & price momentum (sentiment from CrewAI agents)",
+                "note": "Uses free tier APIs only - analyst & momentum (60%) + yfinance metrics (40%)",
             }
 
             logger.debug(

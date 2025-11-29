@@ -198,26 +198,32 @@ class FinancialDataFetcherTool(BaseTool):
             # Fetch price context for momentum
             price_context = self._get_price_context(ticker)
 
+            # Fetch yfinance metrics
+            metrics = self._get_yfinance_metrics(ticker)
+
             # Determine data availability
             available_sources = []
             if analyst_data:
                 available_sources.append("analyst_consensus")
             if price_context and price_context.get("change_percent") is not None:
                 available_sources.append("price_momentum")
+            if metrics and any(v for v in metrics.values() if v and isinstance(v, dict) and v):
+                available_sources.append("yfinance_metrics")
 
             # Note: Sentiment is calculated by CrewAI News & Sentiment Agent, not from premium APIs
             result = {
                 "ticker": ticker,
                 "analyst_data": analyst_data or {},
                 "price_context": price_context or {},
+                "metrics": metrics or {},
                 "data_availability": (
                     ", ".join(available_sources) if available_sources else "limited"
                 ),
                 "timestamp": datetime.now().isoformat(),
             }
 
-            # Cache even partial data
-            self.cache_manager.set(cache_key, result, ttl_hours=4)  # Shorter cache for sentiment
+            # Cache even partial data (longer TTL for financial metrics)
+            self.cache_manager.set(cache_key, result, ttl_hours=24)
 
             return result
 
@@ -227,6 +233,7 @@ class FinancialDataFetcherTool(BaseTool):
                 "ticker": ticker,
                 "analyst_data": {},
                 "price_context": {},
+                "metrics": {},
                 "error": str(e),
             }
 
@@ -270,6 +277,88 @@ class FinancialDataFetcherTool(BaseTool):
         except Exception as e:
             logger.debug(f"Error getting price context for {ticker}: {e}")
             return {"change_percent": 0, "trend": "neutral"}
+
+    def _get_yfinance_metrics(self, ticker: str) -> dict[str, Any]:
+        """Get fundamental metrics from yfinance.
+
+        Args:
+            ticker: Stock ticker symbol
+
+        Returns:
+            Dictionary with valuation, profitability, financial health, and growth metrics
+        """
+        try:
+            import yfinance as yf
+
+            logger.debug(f"Fetching yfinance metrics for {ticker}")
+
+            # Fetch ticker data
+            tick = yf.Ticker(ticker)
+            info = tick.info
+
+            if not info:
+                logger.debug(f"No yfinance data available for {ticker}")
+                return {}
+
+            # Extract valuation metrics
+            valuation = {
+                "trailing_pe": info.get("trailingPE"),
+                "forward_pe": info.get("forwardPE"),
+                "price_to_book": info.get("priceToBook"),
+                "price_to_sales": info.get("priceToSalesTrailing12Months"),
+                "peg_ratio": info.get("pegRatio"),
+                "enterprise_value": info.get("enterpriseValue"),
+                "enterprise_to_revenue": info.get("enterpriseToRevenue"),
+                "enterprise_to_ebitda": info.get("enterpriseToEbitda"),
+            }
+
+            # Extract profitability metrics
+            profitability = {
+                "gross_margin": info.get("grossMargins"),
+                "operating_margin": info.get("operatingMargins"),
+                "profit_margin": info.get("profitMargins"),
+                "return_on_equity": info.get("returnOnEquity"),
+                "return_on_assets": info.get("returnOnAssets"),
+                "ebitda": info.get("ebitda"),
+                "trailing_eps": info.get("trailingEps"),
+                "forward_eps": info.get("forwardEps"),
+            }
+
+            # Extract financial health metrics
+            financial_health = {
+                "debt_to_equity": info.get("debtToEquity"),
+                "total_debt": info.get("totalDebt"),
+                "total_cash": info.get("totalCash"),
+                "current_ratio": info.get("currentRatio"),
+                "quick_ratio": info.get("quickRatio"),
+                "free_cashflow": info.get("freeCashflow"),
+                "operating_cashflow": info.get("operatingCashflow"),
+            }
+
+            # Extract growth metrics
+            growth = {
+                "revenue_growth": info.get("revenueGrowth"),
+                "earnings_growth": info.get("earningsGrowth"),
+                "earnings_quarterly_growth": info.get("earningsQuarterlyGrowth"),
+            }
+
+            # Filter out None values for cleaner output
+            metrics = {
+                "valuation": {k: v for k, v in valuation.items() if v is not None},
+                "profitability": {k: v for k, v in profitability.items() if v is not None},
+                "financial_health": {k: v for k, v in financial_health.items() if v is not None},
+                "growth": {k: v for k, v in growth.items() if v is not None},
+            }
+
+            logger.debug(f"Retrieved yfinance metrics for {ticker}")
+            return metrics
+
+        except ImportError:
+            logger.warning("yfinance not installed, skipping metrics")
+            return {}
+        except Exception as e:
+            logger.debug(f"Error getting yfinance metrics for {ticker}: {e}")
+            return {}
 
 
 class NewsFetcherTool(BaseTool):

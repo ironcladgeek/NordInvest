@@ -3,6 +3,7 @@
 NOTE: This implementation uses ONLY free tier API data:
 - Analyst recommendations from Finnhub (free tier: /stock/recommendation-trend)
 - Price data from Yahoo Finance (free tier)
+- Fundamental metrics from yfinance (free tier)
 - News sentiment analyzed by CrewAI agents/LLM (no premium API calls)
 
 Premium endpoints like /stock/metric, /stock/financials, and /news-sentiment
@@ -11,6 +12,7 @@ are NOT used to maintain cost efficiency and free tier compatibility.
 
 from typing import Any
 
+from src.analysis.metrics import FundamentalMetricsAnalyzer
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -144,6 +146,65 @@ class FundamentalAnalyzer:
             score -= 15
 
         return max(0, min(100, score))
+
+    @staticmethod
+    def calculate_enhanced_score(
+        analyst_data: dict[str, Any] = None,
+        price_context: dict[str, Any] = None,
+        sentiment_score: float = None,
+        metrics_data: dict[str, Any] = None,
+    ) -> dict[str, Any]:
+        """Calculate enhanced fundamental score with metrics.
+
+        Combines analyst consensus, price momentum, and yfinance metrics
+        for comprehensive fundamental analysis.
+
+        Args:
+            analyst_data: Analyst recommendation trends from Finnhub
+            price_context: Price momentum context
+            sentiment_score: News sentiment score from CrewAI agent (0-100, optional)
+            metrics_data: yfinance metrics (valuation, profitability, etc.)
+
+        Returns:
+            Dictionary with component scores and overall enhanced score
+        """
+        # Calculate baseline score (analyst + momentum)
+        baseline = FundamentalAnalyzer.calculate_score(analyst_data, price_context, sentiment_score)
+
+        # Calculate metrics score if data available
+        metrics_score_data = {}
+        if metrics_data:
+            metrics_score_data = FundamentalMetricsAnalyzer.calculate_metrics_score(metrics_data)
+        else:
+            # Default neutral metrics score if no data
+            metrics_score_data = {
+                "overall_score": 50,
+                "valuation_score": 50,
+                "profitability_score": 50,
+                "financial_health_score": 50,
+                "growth_score": 50,
+            }
+
+        # Combine scores
+        # Baseline (analyst + momentum): 60%, Metrics: 40%
+        combined_score = (
+            baseline["overall_score"] * 0.60 + metrics_score_data["overall_score"] * 0.40
+        )
+
+        return {
+            "overall_score": max(0, min(100, combined_score)),
+            "baseline_score": baseline["overall_score"],
+            "metrics_score": metrics_score_data["overall_score"],
+            "analyst_score": baseline["analyst_score"],
+            "momentum_score": baseline["momentum_score"],
+            "sentiment_score": baseline["sentiment_score"],
+            "valuation_score": metrics_score_data.get("valuation_score", 50),
+            "profitability_score": metrics_score_data.get("profitability_score", 50),
+            "financial_health_score": metrics_score_data.get("financial_health_score", 50),
+            "growth_score": metrics_score_data.get("growth_score", 50),
+            "baseline_components": baseline.get("components", {}),
+            "metrics_components": metrics_score_data.get("components", {}),
+        }
 
     @staticmethod
     def get_recommendation(score: float) -> str:
