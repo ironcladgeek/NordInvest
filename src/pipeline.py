@@ -130,6 +130,12 @@ class AnalysisPipeline:
         generate_allocation: bool = True,
         report_date: str | None = None,
         analysis_mode: str = "rule_based",
+        analyzed_category: str | None = None,
+        analyzed_market: str | None = None,
+        analyzed_tickers_specified: list[str] | None = None,
+        initial_tickers: list[str] | None = None,
+        tickers_with_anomalies: list[str] | None = None,
+        force_full_analysis_used: bool = False,
     ) -> DailyReport:
         """Generate daily analysis report from signals.
 
@@ -139,6 +145,12 @@ class AnalysisPipeline:
             generate_allocation: Whether to generate allocation suggestions
             report_date: Report date (YYYY-MM-DD), uses today if not provided
             analysis_mode: Analysis mode used ("llm" or "rule_based")
+            analyzed_category: Category analyzed (e.g., us_tech_software)
+            analyzed_market: Market analyzed (e.g., us, nordic, eu, global)
+            analyzed_tickers_specified: Specific tickers analyzed (if --ticker was used)
+            initial_tickers: Complete list of initial tickers before filtering
+            tickers_with_anomalies: Tickers with anomalies from Stage 1 market scan (LLM mode)
+            force_full_analysis_used: Whether --force-full-analysis flag was provided
 
         Returns:
             Daily report object
@@ -163,6 +175,12 @@ class AnalysisPipeline:
                 allocation_suggestion=allocation_suggestion,
                 report_date=report_date,
                 analysis_mode=analysis_mode,
+                analyzed_category=analyzed_category,
+                analyzed_market=analyzed_market,
+                analyzed_tickers_specified=analyzed_tickers_specified,
+                initial_tickers=initial_tickers,
+                tickers_with_anomalies=tickers_with_anomalies,
+                force_full_analysis_used=force_full_analysis_used,
             )
 
             logger.debug(f"Report generated: {report.strong_signals_count} strong signals")
@@ -214,6 +232,17 @@ class AnalysisPipeline:
             fundamental_score = analysis_data.get("fundamental", {}).get("fundamental_score", 50)
             sentiment_score = analysis_data.get("sentiment", {}).get("sentiment_score", 50)
 
+            # Fetch actual current price and currency from cache
+            current_price = 0.0
+            currency = "USD"
+            try:
+                latest_price = self.cache_manager.get_latest_price(ticker)
+                if latest_price:
+                    current_price = latest_price.close_price
+                    currency = latest_price.currency
+            except Exception as e:
+                logger.warning(f"Could not fetch price for {ticker}: {e}. Using fallback.")
+
             # Assess risks
             signal_dict = {
                 "ticker": ticker,
@@ -241,8 +270,8 @@ class AnalysisPipeline:
                 name=analysis.get("ticker", "Unknown"),
                 market="unknown",
                 sector=None,
-                current_price=100.0,  # Placeholder
-                currency="EUR",
+                current_price=current_price,
+                currency=currency,
                 scores=analysis_data.get("synthesis", {}).get("component_scores")
                 or {
                     "technical": technical_score,

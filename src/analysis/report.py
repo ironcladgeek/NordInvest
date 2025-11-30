@@ -48,6 +48,12 @@ class ReportGenerator:
         allocation_suggestion: Any = None,
         report_date: str | None = None,
         analysis_mode: str = "rule_based",
+        analyzed_category: str | None = None,
+        analyzed_market: str | None = None,
+        analyzed_tickers_specified: list[str] | None = None,
+        initial_tickers: list[str] | None = None,
+        tickers_with_anomalies: list[str] | None = None,
+        force_full_analysis_used: bool = False,
     ) -> DailyReport:
         """Generate daily market analysis report.
 
@@ -59,6 +65,12 @@ class ReportGenerator:
             allocation_suggestion: Portfolio allocation suggestion
             report_date: Report date (YYYY-MM-DD), uses today if not provided
             analysis_mode: Analysis mode used ("llm" or "rule_based")
+            analyzed_category: Category analyzed (e.g., us_tech_software)
+            analyzed_market: Market analyzed (e.g., us, nordic, eu, global)
+            analyzed_tickers_specified: Specific tickers analyzed (if --ticker was used)
+            initial_tickers: Complete list of initial tickers before filtering
+            tickers_with_anomalies: Tickers with anomalies from Stage 1 market scan (LLM mode)
+            force_full_analysis_used: Whether --force-full-analysis flag was provided
 
         Returns:
             Daily report object
@@ -68,6 +80,9 @@ class ReportGenerator:
 
         portfolio_alerts = portfolio_alerts or []
         key_news = key_news or []
+        analyzed_tickers_specified = analyzed_tickers_specified or []
+        initial_tickers = initial_tickers or []
+        tickers_with_anomalies = tickers_with_anomalies or []
 
         # Filter strong signals (confidence >= 70)
         strong_signals = [s for s in signals if s.confidence >= 70]
@@ -103,6 +118,12 @@ class ReportGenerator:
             data_sources=self.DATA_SOURCES,
             next_update=self._calculate_next_update(report_date),
             analysis_mode=analysis_mode,
+            analyzed_category=analyzed_category,
+            analyzed_market=analyzed_market,
+            analyzed_tickers_specified=analyzed_tickers_specified,
+            initial_tickers=initial_tickers,
+            tickers_with_anomalies=tickers_with_anomalies,
+            force_full_analysis_used=force_full_analysis_used,
         )
 
         logger.debug(
@@ -139,8 +160,48 @@ class ReportGenerator:
             # Rule-based mode
             md.append("*Analysis: Rule-based (technical indicators & fundamental metrics)*\n")
 
+        # Analysis Context
+        md.append("\n## Analysis Context\n")
+        context_items = []
+        if report.analyzed_category:
+            context_items.append(f"- **Category:** {report.analyzed_category.upper()}")
+        if report.analyzed_market:
+            context_items.append(f"- **Market:** {report.analyzed_market.upper()}")
+        if report.analyzed_tickers_specified:
+            context_items.append(
+                f"- **Specified Tickers:** {', '.join(report.analyzed_tickers_specified)}"
+            )
+        if report.initial_tickers:
+            context_items.append(
+                f"- **Initial Instruments:** {len(report.initial_tickers)} tickers"
+            )
+
+        md.append("\n".join(context_items))
+        if context_items:
+            md.append("")
+
+        # Stage 1 Anomaly Detection (LLM mode only)
+        if report.analysis_mode == "llm" and report.tickers_with_anomalies:
+            md.append("\n### Stage 1: Market Scan Results\n")
+            md.append(f"Anomalies detected in **{len(report.tickers_with_anomalies)}** out of ")
+            md.append(f"**{len(report.initial_tickers)}** instruments:\n")
+            if len(report.tickers_with_anomalies) <= 20:
+                md.append(f"\n{', '.join(report.tickers_with_anomalies)}\n")
+            else:
+                md.append(
+                    f"\n{', '.join(report.tickers_with_anomalies[:15])} ... and {len(report.tickers_with_anomalies) - 15} more\n"
+                )
+        elif report.analysis_mode == "llm" and not report.tickers_with_anomalies:
+            md.append("\n### Stage 1: Market Scan Results\n")
+            if report.force_full_analysis_used:
+                md.append(
+                    "No anomalies detected (full analysis performed due to --force-full-analysis)\n"
+                )
+            else:
+                md.append("No anomalies detected (all instruments analyzed)\n")
+
         # Market Overview
-        md.append("## Market Overview\n")
+        md.append("\n## Market Overview\n")
         md.append(report.market_overview)
         md.append("")
 
@@ -163,13 +224,19 @@ class ReportGenerator:
                 f"- **Capital to Allocate:** €{report.allocation_suggestion.total_allocated:,.0f} "
                 f"({report.allocation_suggestion.total_allocated_pct}%)\n"
             )
-            md.append(f"- **Unallocated:** €{report.allocation_suggestion.unallocated:,.0f}\n\n")
+            md.append(f"- **Unallocated:** €{report.allocation_suggestion.unallocated:,.0f}\n")
 
-            md.append("### Suggested Positions\n")
-            md.append("| Ticker | Amount (€) | Percentage | Action |\n")
-            md.append("|--------|-----------|-----------|--------|\n")
+            # Create mapping of ticker to recommendation from signals
+            signal_map = {s.ticker: s.recommendation.value.upper() for s in report.strong_signals}
+
+            md.append("\n### Suggested Positions")
+            md.append("| Ticker | Amount (€) | Percentage | Recommendation |")
+            md.append("|--------|-----------|-----------|----------------|")
             for pos in report.allocation_suggestion.suggested_positions:
-                md.append(f"| {pos.ticker} | €{pos.eur:,.0f} | {pos.percentage}% | BUY |\n")
+                recommendation = signal_map.get(pos.ticker, "HOLD")
+                md.append(
+                    f"| {pos.ticker} | €{pos.eur:,.0f} | {pos.percentage}% | {recommendation} |"
+                )
             md.append("")
 
         # Portfolio Alerts
@@ -207,6 +274,20 @@ class ReportGenerator:
         md.append(f"- **Strong Signals:** {report.strong_signals_count}\n")
         md.append(f"- **Moderate Signals:** {report.moderate_signals_count}\n")
         md.append(f"- **Next Update:** {report.next_update}\n\n")
+
+        # Initial Instruments List (reference section)
+        if report.initial_tickers:
+            md.append("\n## Initial Instruments List\n")
+            md.append(
+                f"Complete list of {len(report.initial_tickers)} instruments analyzed in this session:\n\n"
+            )
+            # Display in formatted columns for readability
+            tickers = report.initial_tickers
+            cols = 10  # Show 10 tickers per row
+            for i in range(0, len(tickers), cols):
+                row = tickers[i : i + cols]
+                md.append(", ".join(f"`{t}`" for t in row) + "\n")
+            md.append("")
 
         # Disclaimers
         if report.disclaimers:

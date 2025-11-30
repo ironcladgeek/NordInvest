@@ -1,5 +1,8 @@
 """NordInvest CLI interface."""
 
+import json
+import re
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -32,19 +35,99 @@ app = typer.Typer(
 logger = get_logger(__name__)
 
 
+def _scan_market_for_anomalies(
+    tickers: list[str],
+    pipeline: "AnalysisPipeline",
+    typer_instance,
+    force_full_analysis: bool = False,
+) -> list[str]:
+    """Scan market for anomalies using rule-based market scanner.
+
+    This is Stage 1 of two-stage LLM analysis - quickly identifies
+    instruments with anomalies before expensive LLM analysis.
+
+    Args:
+        tickers: List of tickers to scan
+        pipeline: Analysis pipeline with market scanner
+        typer_instance: Typer instance for output
+        force_full_analysis: If True, analyze all tickers when no anomalies found
+
+    Returns:
+        List of flagged tickers with anomalies
+
+    Raises:
+        RuntimeError: If market scan fails (to avoid expensive LLM fallback)
+        RuntimeError: If no anomalies found and force_full_analysis=False
+    """
+    try:
+        typer_instance.echo("🔍 Stage 1: Scanning market for anomalies...")
+        context = {"tickers": tickers}
+
+        # Run market scan
+        scan_result = pipeline.crew.market_scanner.execute("Scan market for anomalies", context)
+
+        if scan_result.get("status") != "success":
+            error_msg = scan_result.get("message", "Unknown error")
+            logger.error(f"Market scan failed: {error_msg}")
+            raise RuntimeError(
+                f"Market scan failed: {error_msg}\n"
+                "Unable to proceed with LLM analysis to avoid incurring unnecessary costs.\n"
+                "Please check market data availability and try again."
+            )
+
+        # Extract flagged instruments
+        flagged = scan_result.get("instruments", [])
+        flagged_tickers = [
+            instrument.get("ticker") for instrument in flagged if instrument.get("ticker")
+        ]
+
+        if not flagged_tickers:
+            logger.warning("Market scan completed but found no anomalies")
+            if not force_full_analysis:
+                raise RuntimeError(
+                    "Market scan found no anomalies in the selected instruments.\n"
+                    "To analyze all instruments anyway in LLM mode (higher cost), "
+                    "use --force-full-analysis flag.\n"
+                    "Example: analyze --category us_mega_cap --llm --force-full-analysis"
+                )
+            typer_instance.echo("  ⚠️  No anomalies detected, but proceeding with all instruments")
+            typer_instance.echo("     (--force-full-analysis flag was provided)")
+            return tickers
+
+        typer_instance.echo(
+            f"  ✓ Scan complete: {len(flagged_tickers)} anomalies found "
+            f"({len(flagged_tickers)}/{len(tickers)} instruments)"
+        )
+
+        return flagged_tickers
+
+    except RuntimeError:
+        raise
+    except Exception as e:
+        logger.error(f"Error in market scan: {e}", exc_info=True)
+        raise RuntimeError(
+            f"Market scan error: {str(e)}\n"
+            "Unable to proceed with LLM analysis to avoid incurring unnecessary costs.\n"
+            "Check logs for details."
+        )
+
+
 def _run_llm_analysis(
     tickers: list[str],
     config_obj,
     typer_instance,
     debug_llm: bool = False,
+    is_filtered: bool = False,
+    cache_manager=None,
 ) -> tuple[list[InvestmentSignal], None]:
     """Run analysis using LLM-powered orchestrator.
 
     Args:
-        tickers: List of tickers to analyze
+        tickers: List of tickers to analyze (pre-filtered if is_filtered=True)
         config_obj: Loaded configuration object
         typer_instance: Typer instance for output
         debug_llm: Enable LLM debug mode (save inputs/outputs)
+        is_filtered: Whether tickers have been pre-filtered by market scan
 
     Returns:
         Tuple of (signals, portfolio_manager)
@@ -85,8 +168,9 @@ def _run_llm_analysis(
 
         # Analyze each ticker with LLM
         signals = []
+        stage_label = "Stage 2: Deep LLM analysis" if is_filtered else "Analyzing instruments"
         with typer_instance.progressbar(
-            tickers, label="Analyzing instruments", show_pos=True, show_percent=True
+            tickers, label=stage_label, show_pos=True, show_percent=True
         ) as progress:
             for ticker in progress:
                 try:
@@ -128,7 +212,9 @@ def _run_llm_analysis(
                                 signal_text = str(signal_data)
 
                             # Create InvestmentSignal from LLM result
-                            signal = _create_signal_from_llm_result(ticker, signal_text)
+                            signal = _create_signal_from_llm_result(
+                                ticker, signal_text, cache_manager
+                            )
                             if signal:
                                 signals.append(signal)
                         else:
@@ -158,12 +244,14 @@ def _run_llm_analysis(
 def _create_signal_from_llm_result(
     ticker: str,
     llm_result: dict | str,
+    cache_manager=None,
 ) -> InvestmentSignal | None:
     """Convert LLM analysis result to InvestmentSignal.
 
     Args:
         ticker: Stock ticker
         llm_result: LLM analysis result (dict or JSON string)
+        cache_manager: Optional cache manager for fetching current price
 
     Returns:
         InvestmentSignal or None if conversion fails
@@ -171,9 +259,6 @@ def _create_signal_from_llm_result(
     try:
         # Parse LLM result if it's a string
         if isinstance(llm_result, str):
-            import json
-            import re
-
             # Clean up common formatting issues
             llm_result = llm_result.strip()
 
@@ -232,15 +317,27 @@ def _create_signal_from_llm_result(
         )
 
         # Create signal with proper schema
-        from datetime import datetime
+        # Fetch actual current price and currency from cache
+        current_price = llm_result.get("current_price", 0.0)
+        currency = llm_result.get("currency", "USD")
+        if cache_manager:
+            try:
+                latest_price = cache_manager.get_latest_price(ticker)
+                if latest_price:
+                    current_price = latest_price.close_price
+                    currency = latest_price.currency
+            except Exception as e:
+                logger.debug(
+                    f"Could not fetch price for {ticker} from cache: {e}. Using LLM defaults."
+                )
 
         signal = InvestmentSignal(
             ticker=ticker,
             name=llm_result.get("name", ticker),
             market=llm_result.get("market", "Global"),
             sector=llm_result.get("sector"),
-            current_price=llm_result.get("current_price", 0.0),
-            currency=llm_result.get("currency", "USD"),
+            current_price=current_price,
+            currency=currency,
             scores=ComponentScores(
                 **llm_result.get(
                     "scores",
@@ -284,7 +381,7 @@ def analyze(
     category: str = typer.Option(
         None,
         "--category",
-        help="US ticker category: 'mega_cap', 'tech_software', 'ai_ml', 'cybersecurity', etc. Comma-separated for multiple (e.g., 'tech_software,ai_ml'). Use list-categories to see all options",
+        help="US ticker category: 'us_mega_cap', 'us_tech_software', 'us_ai_ml', 'us_cybersecurity', etc. Comma-separated for multiple (e.g., 'us_tech_software,us_ai_ml'). Use list-categories to see all options",
     ),
     ticker: str = typer.Option(
         None,
@@ -336,6 +433,11 @@ def analyze(
         "--test",
         help="Run minimal test case with a single ticker (AAPL) to verify system functionality",
     ),
+    force_full_analysis: bool = typer.Option(
+        False,
+        "--force-full-analysis",
+        help="Force LLM analysis on all tickers when market scan finds no anomalies (increases costs)",
+    ),
 ) -> None:
     """Analyze markets and generate investment signals.
 
@@ -365,12 +467,12 @@ def analyze(
         analyze --ticker AAPL,MSFT,GOOGL
 
         # Analyze US categories
-        analyze --category tech_software
-        analyze --category ai_ml,cybersecurity --limit 30
-        analyze --category mega_cap
+        analyze --category us_tech_software
+        analyze --category us_ai_ml,us_cybersecurity --limit 30
+        analyze --category us_mega_cap
 
         # Combine markets and categories
-        analyze --market nordic --category tech_software
+        analyze --market nordic --category us_tech_software
     """
     start_time = time.time()
     run_log = None
@@ -396,8 +498,8 @@ def analyze(
             "  analyze --test --llm        # Quick test with LLM\n"
             "  analyze --market global\n"
             "  analyze --market us\n"
-            "  analyze --category tech_software\n"
-            "  analyze --category ai_ml,cybersecurity --limit 30\n"
+            "  analyze --category us_tech_software\n"
+            "  analyze --category us_ai_ml,us_cybersecurity --limit 30\n"
             "  analyze --market us,eu --limit 50\n"
             "  analyze --ticker AAPL,MSFT,GOOGL",
             err=True,
@@ -486,7 +588,7 @@ def analyze(
                 typer.echo("Available categories:", err=True)
                 for cat_name, count in sorted(available_categories.items()):
                     typer.echo(f"  {cat_name}: {count} tickers", err=True)
-                raise typer.Exit(code=1)
+                sys.exit(1)
 
             # Get tickers from categories, optionally combined with markets
             if market:
@@ -535,11 +637,62 @@ def analyze(
                 typer.echo(f"  Limit: {limit} instruments per market")
             typer.echo(f"  Total instruments to analyze: {len(ticker_list)}")
 
+        # Prepare analysis context metadata
+        analyzed_category = None
+        analyzed_market = None
+        analyzed_tickers_specified = []
+        tickers_with_anomalies = []
+        force_full_analysis_used = False
+
+        if ticker:
+            analyzed_tickers_specified = [t.strip().upper() for t in ticker.split(",")]
+        elif category:
+            analyzed_category = category
+        else:
+            analyzed_market = market
+
         # Run analysis (LLM or rule-based)
         if use_llm:
-            typer.echo("\n🤖 Using LLM-powered analysis (CrewAI with intelligent agents)")
+            typer.echo("\n🤖 Using two-stage LLM-powered analysis")
+            typer.echo("   Stage 1: Rule-based market scan for anomalies")
+            typer.echo("   Stage 2: Deep LLM analysis on flagged instruments")
+
+            # Stage 1: Market scan to identify anomalies
+            try:
+                filtered_ticker_list = _scan_market_for_anomalies(
+                    ticker_list, pipeline, typer, force_full_analysis
+                )
+                # If force_full_analysis is False and we got here, anomalies were found
+                # If force_full_analysis is True and no filtering happened, flag was used
+                if force_full_analysis and len(filtered_ticker_list) == len(ticker_list):
+                    # --force-full-analysis was used and no anomalies were found
+                    force_full_analysis_used = True
+                else:
+                    # Anomalies were found (whether filtered or not)
+                    tickers_with_anomalies = filtered_ticker_list
+            except RuntimeError as e:
+                # Display error cleanly without traceback
+                typer.echo(f"\n❌ Error: {str(e)}", err=True)
+                sys.exit(1)
+
+            # Show filtering results
+            if len(filtered_ticker_list) < len(ticker_list):
+                reduction_pct = 100 * (1 - len(filtered_ticker_list) / len(ticker_list))
+                typer.echo(
+                    f"\n✅ Filtering complete: {len(filtered_ticker_list)}/{len(ticker_list)} "
+                    f"instruments selected ({reduction_pct:.0f}% reduction)"
+                )
+                typer.echo(f"   Estimated cost savings: ~{reduction_pct:.0f}% lower API usage")
+
+            # Stage 2: LLM analysis on filtered list
+            typer.echo()
             signals, portfolio_manager = _run_llm_analysis(
-                ticker_list, config_obj, typer, debug_llm
+                filtered_ticker_list,
+                config_obj,
+                typer,
+                debug_llm,
+                is_filtered=True,
+                cache_manager=cache_manager,
             )
             analysis_mode = "llm"
         else:
@@ -559,6 +712,12 @@ def analyze(
                 signals,
                 generate_allocation=True,
                 analysis_mode=analysis_mode,
+                analyzed_category=analyzed_category,
+                analyzed_market=analyzed_market,
+                analyzed_tickers_specified=analyzed_tickers_specified,
+                initial_tickers=ticker_list,
+                tickers_with_anomalies=tickers_with_anomalies,
+                force_full_analysis_used=force_full_analysis_used,
             )
 
             # Display summary
@@ -589,8 +748,6 @@ def analyze(
                     typer.echo(f"  Report saved: {report_path}")
                 else:
                     report_path = reports_dir / f"report_{report.report_date}_{timestamp}.json"
-                    import json
-
                     with open(report_path, "w") as f:
                         json.dump(pipeline.report_generator.to_json(report), f, indent=2)
                     typer.echo(f"  Report saved: {report_path}")
@@ -660,49 +817,54 @@ def list_categories() -> None:
 
     # Group by type for better readability
     groups = {
-        "Market Cap": ["mega_cap", "large_cap", "mid_cap", "small_cap"],
+        "Market Cap": ["us_mega_cap", "us_large_cap", "us_mid_cap", "us_small_cap"],
         "Technology": [
-            "tech",
-            "tech_software",
-            "tech_semiconductors",
-            "tech_hardware",
-            "tech_internet",
+            "us_tech",
+            "us_tech_software",
+            "us_tech_semiconductors",
+            "us_tech_hardware",
+            "us_tech_internet",
         ],
-        "Healthcare": ["healthcare", "healthcare_pharma", "healthcare_devices"],
+        "Healthcare": ["us_healthcare", "us_healthcare_pharma", "us_healthcare_devices"],
         "Financials": [
-            "financials",
-            "financials_banks",
-            "financials_fintech",
-            "financials_asset_mgmt",
+            "us_financials",
+            "us_financials_banks",
+            "us_financials_fintech",
+            "us_financials_asset_mgmt",
         ],
-        "Consumer": ["consumer", "consumer_retail", "consumer_food_bev", "consumer_restaurants"],
+        "Consumer": [
+            "us_consumer",
+            "us_consumer_retail",
+            "us_consumer_food_bev",
+            "us_consumer_restaurants",
+        ],
         "Other Sectors": [
-            "industrials",
-            "energy",
-            "clean_energy",
-            "utilities",
-            "real_estate",
-            "materials",
-            "communication",
-            "transportation",
+            "us_industrials",
+            "us_energy",
+            "us_clean_energy",
+            "us_utilities",
+            "us_real_estate",
+            "us_materials",
+            "us_communication",
+            "us_transportation",
         ],
         "Themes": [
-            "ai_ml",
-            "cybersecurity",
-            "cloud_computing",
-            "space_defense",
-            "ev_autonomous",
-            "biotech_genomics",
-            "quantum_computing",
+            "us_ai_ml",
+            "us_cybersecurity",
+            "us_cloud_computing",
+            "us_space_defense",
+            "us_ev_autonomous",
+            "us_biotech_genomics",
+            "us_quantum_computing",
         ],
         "ETFs": [
-            "etfs",
-            "etfs_broad_market",
-            "etfs_sector",
-            "etfs_fixed_income",
-            "etfs_international",
-            "etfs_thematic",
-            "etfs_dividend",
+            "us_etfs",
+            "us_etfs_broad_market",
+            "us_etfs_sector",
+            "us_etfs_fixed_income",
+            "us_etfs_international",
+            "us_etfs_thematic",
+            "us_etfs_dividend",
         ],
     }
 
@@ -716,9 +878,9 @@ def list_categories() -> None:
 
     # Usage examples
     typer.echo("💡 Usage Examples:")
-    typer.echo("  analyze --category tech_software")
-    typer.echo("  analyze --category ai_ml,cybersecurity --limit 30")
-    typer.echo("  analyze --market nordic --category tech_software")
+    typer.echo("  analyze --category us_tech_software")
+    typer.echo("  analyze --category us_ai_ml,us_cybersecurity --limit 30")
+    typer.echo("  analyze --market nordic --category us_tech_software")
     typer.echo()
 
 

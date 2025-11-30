@@ -194,3 +194,25 @@ class DailyReport(BaseModel):
     analysis_mode: str = Field(
         default="rule_based", description="Analysis mode: 'llm' or 'rule_based'"
     )
+
+    # Analysis context
+    analyzed_category: str | None = Field(
+        default=None, description="Category analyzed (e.g., us_tech_software, us_cybersecurity)"
+    )
+    analyzed_market: str | None = Field(
+        default=None, description="Market analyzed (e.g., us, nordic, eu, global)"
+    )
+    analyzed_tickers_specified: list[str] = Field(
+        default_factory=list, description="Specific tickers analyzed (if --ticker was used)"
+    )
+    initial_tickers: list[str] = Field(
+        default_factory=list, description="Complete list of initial tickers before filtering"
+    )
+    tickers_with_anomalies: list[str] = Field(
+        default_factory=list,
+        description="Tickers with anomalies from Stage 1 market scan (LLM mode)",
+    )
+    force_full_analysis_used: bool = Field(
+        default=False,
+        description="Whether --force-full-analysis flag was provided to override empty anomaly results",
+    )
