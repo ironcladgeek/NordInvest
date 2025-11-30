@@ -168,52 +168,6 @@ class FinnhubProvider(DataProvider):
             logger.error(f"Error fetching news for {ticker}: {e}")
             raise RuntimeError(f"Failed to fetch news for {ticker}: {e}")
 
-    def get_news_sentiment(self, ticker: str) -> Optional[dict]:
-        """Fetch news sentiment for a stock.
-
-        Args:
-            ticker: Stock ticker symbol
-
-        Returns:
-            Dictionary with sentiment metrics or None if not available
-
-        Raises:
-            ValueError: If API key is not configured
-            RuntimeError: If API call fails
-        """
-        if not self.api_key:
-            raise ValueError("Finnhub API key is not configured")
-
-        try:
-            logger.debug(f"Fetching news sentiment for {ticker}")
-
-            response = requests.get(
-                f"{FINNHUB_BASE_URL}/news-sentiment",
-                params={
-                    "symbol": ticker,
-                    "token": self.api_key,
-                },
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
-
-            data = response.json()
-
-            sentiment = {
-                "positive": data.get("sentiment", {}).get("positive", 0),
-                "negative": data.get("sentiment", {}).get("negative", 0),
-                "neutral": 1
-                - data.get("sentiment", {}).get("positive", 0)
-                - data.get("sentiment", {}).get("negative", 0),
-            }
-
-            logger.debug(f"Sentiment for {ticker}: {sentiment}")
-            return sentiment
-
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error fetching sentiment for {ticker}: {e}")
-            raise RuntimeError(f"Failed to fetch sentiment for {ticker}: {e}")
-
     def get_company_info(self, ticker: str) -> Optional[dict]:
         """Fetch company basic information.
 
@@ -260,6 +214,69 @@ class FinnhubProvider(DataProvider):
         except requests.exceptions.RequestException as e:
             logger.error(f"Error fetching company info for {ticker}: {e}")
             raise RuntimeError(f"Failed to fetch company info for {ticker}: {e}")
+
+    def get_recommendation_trends(self, ticker: str) -> Optional[dict]:
+        """Fetch analyst recommendation trends (FREE TIER endpoint).
+
+        Args:
+            ticker: Stock ticker symbol
+
+        Returns:
+            Dictionary with analyst ratings distribution or None if not available
+
+        Raises:
+            ValueError: If API key is not configured
+            RuntimeError: If API call fails
+        """
+        if not self.api_key:
+            raise ValueError("Finnhub API key is not configured")
+
+        try:
+            logger.debug(f"Fetching recommendation trends for {ticker}")
+
+            response = requests.get(
+                f"{FINNHUB_BASE_URL}/stock/recommendation",
+                params={
+                    "symbol": ticker,
+                    "token": self.api_key,
+                },
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+
+            # Handle empty or invalid JSON responses
+            try:
+                data = response.json()
+            except ValueError as json_err:
+                logger.warning(
+                    f"Invalid JSON response for {ticker} recommendation trends: {json_err}"
+                )
+                return None
+
+            if not data or len(data) == 0:
+                logger.debug(f"No recommendation trend data available for {ticker}")
+                return None
+
+            # Get most recent recommendation data
+            latest = data[0]
+            return {
+                "ticker": ticker,
+                "period": latest.get("period"),
+                "strong_buy": latest.get("strongBuy", 0),
+                "buy": latest.get("buy", 0),
+                "hold": latest.get("hold", 0),
+                "sell": latest.get("sell", 0),
+                "strong_sell": latest.get("strongSell", 0),
+                "total_analysts": latest.get("strongBuy", 0)
+                + latest.get("buy", 0)
+                + latest.get("hold", 0)
+                + latest.get("sell", 0)
+                + latest.get("strongSell", 0),
+            }
+
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Request error fetching recommendation trends for {ticker}: {e}")
+            return None
 
     @staticmethod
     def _infer_market(ticker: str) -> Market:
