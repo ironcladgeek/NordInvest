@@ -130,6 +130,11 @@ class AnalysisPipeline:
         generate_allocation: bool = True,
         report_date: str | None = None,
         analysis_mode: str = "rule_based",
+        analyzed_category: str | None = None,
+        analyzed_market: str | None = None,
+        analyzed_tickers_specified: list[str] | None = None,
+        initial_tickers: list[str] | None = None,
+        tickers_with_anomalies: list[str] | None = None,
     ) -> DailyReport:
         """Generate daily analysis report from signals.
 
@@ -139,6 +144,11 @@ class AnalysisPipeline:
             generate_allocation: Whether to generate allocation suggestions
             report_date: Report date (YYYY-MM-DD), uses today if not provided
             analysis_mode: Analysis mode used ("llm" or "rule_based")
+            analyzed_category: Category analyzed (e.g., us_tech_software)
+            analyzed_market: Market analyzed (e.g., us, nordic, eu, global)
+            analyzed_tickers_specified: Specific tickers analyzed (if --ticker was used)
+            initial_tickers: Complete list of initial tickers before filtering
+            tickers_with_anomalies: Tickers with anomalies from Stage 1 market scan (LLM mode)
 
         Returns:
             Daily report object
@@ -163,6 +173,11 @@ class AnalysisPipeline:
                 allocation_suggestion=allocation_suggestion,
                 report_date=report_date,
                 analysis_mode=analysis_mode,
+                analyzed_category=analyzed_category,
+                analyzed_market=analyzed_market,
+                analyzed_tickers_specified=analyzed_tickers_specified,
+                initial_tickers=initial_tickers,
+                tickers_with_anomalies=tickers_with_anomalies,
             )
 
             logger.debug(f"Report generated: {report.strong_signals_count} strong signals")

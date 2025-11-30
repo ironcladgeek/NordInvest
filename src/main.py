@@ -641,6 +641,19 @@ def analyze(
                 typer.echo(f"  Limit: {limit} instruments per market")
             typer.echo(f"  Total instruments to analyze: {len(ticker_list)}")
 
+        # Prepare analysis context metadata
+        analyzed_category = None
+        analyzed_market = None
+        analyzed_tickers_specified = []
+        tickers_with_anomalies = []
+
+        if ticker:
+            analyzed_tickers_specified = [t.strip().upper() for t in ticker.split(",")]
+        elif category:
+            analyzed_category = category
+        else:
+            analyzed_market = market
+
         # Run analysis (LLM or rule-based)
         if use_llm:
             typer.echo("\n🤖 Using two-stage LLM-powered analysis")
@@ -652,6 +665,9 @@ def analyze(
                 filtered_ticker_list = _scan_market_for_anomalies(
                     ticker_list, pipeline, typer, force_full_analysis
                 )
+                # Save anomalies for report context (if different from full list)
+                if len(filtered_ticker_list) < len(ticker_list):
+                    tickers_with_anomalies = filtered_ticker_list
             except RuntimeError as e:
                 # Display error cleanly without traceback
                 import sys
@@ -696,6 +712,11 @@ def analyze(
                 signals,
                 generate_allocation=True,
                 analysis_mode=analysis_mode,
+                analyzed_category=analyzed_category,
+                analyzed_market=analyzed_market,
+                analyzed_tickers_specified=analyzed_tickers_specified,
+                initial_tickers=ticker_list,
+                tickers_with_anomalies=tickers_with_anomalies,
             )
 
             # Display summary
