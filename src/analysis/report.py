@@ -172,16 +172,9 @@ class ReportGenerator:
             context_items.append(
                 f"- **Initial Instruments:** {len(report.initial_tickers)} tickers"
             )
-            if len(report.initial_tickers) <= 20:
-                md.append("\n".join(context_items))
-                md.append(f"\n  {', '.join(report.initial_tickers)}\n")
-            else:
-                md.append("\n".join(context_items))
-                md.append(
-                    f"\n  ({', '.join(report.initial_tickers[:10])} ... and {len(report.initial_tickers) - 10} more)\n"
-                )
-        else:
-            md.append("\n".join(context_items))
+
+        md.append("\n".join(context_items))
+        if context_items:
             md.append("")
 
         # Stage 1 Anomaly Detection (LLM mode only)
@@ -225,13 +218,19 @@ class ReportGenerator:
                 f"- **Capital to Allocate:** €{report.allocation_suggestion.total_allocated:,.0f} "
                 f"({report.allocation_suggestion.total_allocated_pct}%)\n"
             )
-            md.append(f"- **Unallocated:** €{report.allocation_suggestion.unallocated:,.0f}\n\n")
+            md.append(f"- **Unallocated:** €{report.allocation_suggestion.unallocated:,.0f}\n")
 
-            md.append("### Suggested Positions\n")
-            md.append("| Ticker | Amount (€) | Percentage | Action |\n")
-            md.append("|--------|-----------|-----------|--------|\n")
+            # Create mapping of ticker to recommendation from signals
+            signal_map = {s.ticker: s.recommendation.value.upper() for s in report.strong_signals}
+
+            md.append("\n### Suggested Positions")
+            md.append("| Ticker | Amount (€) | Percentage | Recommendation |")
+            md.append("|--------|-----------|-----------|----------------|")
             for pos in report.allocation_suggestion.suggested_positions:
-                md.append(f"| {pos.ticker} | €{pos.eur:,.0f} | {pos.percentage}% | BUY |\n")
+                recommendation = signal_map.get(pos.ticker, "HOLD")
+                md.append(
+                    f"| {pos.ticker} | €{pos.eur:,.0f} | {pos.percentage}% | {recommendation} |"
+                )
             md.append("")
 
         # Portfolio Alerts
@@ -269,6 +268,20 @@ class ReportGenerator:
         md.append(f"- **Strong Signals:** {report.strong_signals_count}\n")
         md.append(f"- **Moderate Signals:** {report.moderate_signals_count}\n")
         md.append(f"- **Next Update:** {report.next_update}\n\n")
+
+        # Initial Instruments List (reference section)
+        if report.initial_tickers:
+            md.append("\n## Initial Instruments List\n")
+            md.append(
+                f"Complete list of {len(report.initial_tickers)} instruments analyzed in this session:\n\n"
+            )
+            # Display in formatted columns for readability
+            tickers = report.initial_tickers
+            cols = 6  # Show 6 tickers per row
+            for i in range(0, len(tickers), cols):
+                row = tickers[i : i + cols]
+                md.append(", ".join(f"`{t}`" for t in row) + "\n")
+            md.append("")
 
         # Disclaimers
         if report.disclaimers:
