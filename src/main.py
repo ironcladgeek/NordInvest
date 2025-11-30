@@ -32,19 +32,98 @@ app = typer.Typer(
 logger = get_logger(__name__)
 
 
+def _scan_market_for_anomalies(
+    tickers: list[str],
+    pipeline: "AnalysisPipeline",
+    typer_instance,
+    force_full_analysis: bool = False,
+) -> list[str]:
+    """Scan market for anomalies using rule-based market scanner.
+
+    This is Stage 1 of two-stage LLM analysis - quickly identifies
+    instruments with anomalies before expensive LLM analysis.
+
+    Args:
+        tickers: List of tickers to scan
+        pipeline: Analysis pipeline with market scanner
+        typer_instance: Typer instance for output
+        force_full_analysis: If True, analyze all tickers when no anomalies found
+
+    Returns:
+        List of flagged tickers with anomalies
+
+    Raises:
+        RuntimeError: If market scan fails (to avoid expensive LLM fallback)
+        RuntimeError: If no anomalies found and force_full_analysis=False
+    """
+    try:
+        typer_instance.echo("🔍 Stage 1: Scanning market for anomalies...")
+        context = {"tickers": tickers}
+
+        # Run market scan
+        scan_result = pipeline.crew.market_scanner.execute("Scan market for anomalies", context)
+
+        if scan_result.get("status") != "success":
+            error_msg = scan_result.get("message", "Unknown error")
+            logger.error(f"Market scan failed: {error_msg}")
+            raise RuntimeError(
+                f"Market scan failed: {error_msg}\n"
+                "Unable to proceed with LLM analysis to avoid incurring unnecessary costs.\n"
+                "Please check market data availability and try again."
+            )
+
+        # Extract flagged instruments
+        flagged = scan_result.get("instruments", [])
+        flagged_tickers = [
+            instrument.get("ticker") for instrument in flagged if instrument.get("ticker")
+        ]
+
+        if not flagged_tickers:
+            logger.warning("Market scan completed but found no anomalies")
+            if not force_full_analysis:
+                raise RuntimeError(
+                    "Market scan found no anomalies in the selected instruments.\n"
+                    "To analyze all instruments anyway in LLM mode (higher cost), "
+                    "use --force-full-analysis flag.\n"
+                    "Example: analyze --category mega_cap --llm --force-full-analysis"
+                )
+            typer_instance.echo("  ⚠️  No anomalies detected, but proceeding with all instruments")
+            typer_instance.echo("     (--force-full-analysis flag was provided)")
+            return tickers
+
+        typer_instance.echo(
+            f"  ✓ Scan complete: {len(flagged_tickers)} anomalies found "
+            f"({len(flagged_tickers)}/{len(tickers)} instruments)"
+        )
+
+        return flagged_tickers
+
+    except RuntimeError:
+        raise
+    except Exception as e:
+        logger.error(f"Error in market scan: {e}", exc_info=True)
+        raise RuntimeError(
+            f"Market scan error: {str(e)}\n"
+            "Unable to proceed with LLM analysis to avoid incurring unnecessary costs.\n"
+            "Check logs for details."
+        )
+
+
 def _run_llm_analysis(
     tickers: list[str],
     config_obj,
     typer_instance,
     debug_llm: bool = False,
+    is_filtered: bool = False,
 ) -> tuple[list[InvestmentSignal], None]:
     """Run analysis using LLM-powered orchestrator.
 
     Args:
-        tickers: List of tickers to analyze
+        tickers: List of tickers to analyze (pre-filtered if is_filtered=True)
         config_obj: Loaded configuration object
         typer_instance: Typer instance for output
         debug_llm: Enable LLM debug mode (save inputs/outputs)
+        is_filtered: Whether tickers have been pre-filtered by market scan
 
     Returns:
         Tuple of (signals, portfolio_manager)
@@ -85,8 +164,9 @@ def _run_llm_analysis(
 
         # Analyze each ticker with LLM
         signals = []
+        stage_label = "Stage 2: Deep LLM analysis" if is_filtered else "Analyzing instruments"
         with typer_instance.progressbar(
-            tickers, label="Analyzing instruments", show_pos=True, show_percent=True
+            tickers, label=stage_label, show_pos=True, show_percent=True
         ) as progress:
             for ticker in progress:
                 try:
@@ -336,6 +416,11 @@ def analyze(
         "--test",
         help="Run minimal test case with a single ticker (AAPL) to verify system functionality",
     ),
+    force_full_analysis: bool = typer.Option(
+        False,
+        "--force-full-analysis",
+        help="Force LLM analysis on all tickers when market scan finds no anomalies (increases costs)",
+    ),
 ) -> None:
     """Analyze markets and generate investment signals.
 
@@ -537,9 +622,39 @@ def analyze(
 
         # Run analysis (LLM or rule-based)
         if use_llm:
-            typer.echo("\n🤖 Using LLM-powered analysis (CrewAI with intelligent agents)")
+            typer.echo("\n🤖 Using two-stage LLM-powered analysis")
+            typer.echo("   Stage 1: Rule-based market scan for anomalies")
+            typer.echo("   Stage 2: Deep LLM analysis on flagged instruments")
+
+            # Stage 1: Market scan to identify anomalies
+            try:
+                filtered_ticker_list = _scan_market_for_anomalies(
+                    ticker_list, pipeline, typer, force_full_analysis
+                )
+            except RuntimeError as e:
+                # Display error cleanly without traceback
+                import sys
+
+                typer.echo(f"\n❌ Error: {str(e)}", err=True)
+                sys.exit(1)
+
+            # Show filtering results
+            if len(filtered_ticker_list) < len(ticker_list):
+                reduction_pct = 100 * (1 - len(filtered_ticker_list) / len(ticker_list))
+                typer.echo(
+                    f"\n✅ Filtering complete: {len(filtered_ticker_list)}/{len(ticker_list)} "
+                    f"instruments selected ({reduction_pct:.0f}% reduction)"
+                )
+                typer.echo(f"   Estimated cost savings: ~{reduction_pct:.0f}% lower API usage")
+
+            # Stage 2: LLM analysis on filtered list
+            typer.echo()
             signals, portfolio_manager = _run_llm_analysis(
-                ticker_list, config_obj, typer, debug_llm
+                filtered_ticker_list,
+                config_obj,
+                typer,
+                debug_llm,
+                is_filtered=True,
             )
             analysis_mode = "llm"
         else:
