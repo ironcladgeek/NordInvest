@@ -135,6 +135,7 @@ class AnalysisPipeline:
         analyzed_tickers_specified: list[str] | None = None,
         initial_tickers: list[str] | None = None,
         tickers_with_anomalies: list[str] | None = None,
+        force_full_analysis_used: bool = False,
     ) -> DailyReport:
         """Generate daily analysis report from signals.
 
@@ -149,6 +150,7 @@ class AnalysisPipeline:
             analyzed_tickers_specified: Specific tickers analyzed (if --ticker was used)
             initial_tickers: Complete list of initial tickers before filtering
             tickers_with_anomalies: Tickers with anomalies from Stage 1 market scan (LLM mode)
+            force_full_analysis_used: Whether --force-full-analysis flag was provided
 
         Returns:
             Daily report object
@@ -178,6 +180,7 @@ class AnalysisPipeline:
                 analyzed_tickers_specified=analyzed_tickers_specified,
                 initial_tickers=initial_tickers,
                 tickers_with_anomalies=tickers_with_anomalies,
+                force_full_analysis_used=force_full_analysis_used,
             )
 
             logger.debug(f"Report generated: {report.strong_signals_count} strong signals")

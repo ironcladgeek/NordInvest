@@ -53,6 +53,7 @@ class ReportGenerator:
         analyzed_tickers_specified: list[str] | None = None,
         initial_tickers: list[str] | None = None,
         tickers_with_anomalies: list[str] | None = None,
+        force_full_analysis_used: bool = False,
     ) -> DailyReport:
         """Generate daily market analysis report.
 
@@ -69,6 +70,7 @@ class ReportGenerator:
             analyzed_tickers_specified: Specific tickers analyzed (if --ticker was used)
             initial_tickers: Complete list of initial tickers before filtering
             tickers_with_anomalies: Tickers with anomalies from Stage 1 market scan (LLM mode)
+            force_full_analysis_used: Whether --force-full-analysis flag was provided
 
         Returns:
             Daily report object
@@ -121,6 +123,7 @@ class ReportGenerator:
             analyzed_tickers_specified=analyzed_tickers_specified,
             initial_tickers=initial_tickers,
             tickers_with_anomalies=tickers_with_anomalies,
+            force_full_analysis_used=force_full_analysis_used,
         )
 
         logger.debug(
@@ -190,9 +193,12 @@ class ReportGenerator:
                 )
         elif report.analysis_mode == "llm" and not report.tickers_with_anomalies:
             md.append("\n### Stage 1: Market Scan Results\n")
-            md.append(
-                "No anomalies detected (full analysis performed due to --force-full-analysis)\n"
-            )
+            if report.force_full_analysis_used:
+                md.append(
+                    "No anomalies detected (full analysis performed due to --force-full-analysis)\n"
+                )
+            else:
+                md.append("No anomalies detected (all instruments analyzed)\n")
 
         # Market Overview
         md.append("\n## Market Overview\n")
@@ -277,7 +283,7 @@ class ReportGenerator:
             )
             # Display in formatted columns for readability
             tickers = report.initial_tickers
-            cols = 6  # Show 6 tickers per row
+            cols = 10  # Show 10 tickers per row
             for i in range(0, len(tickers), cols):
                 row = tickers[i : i + cols]
                 md.append(", ".join(f"`{t}`" for t in row) + "\n")

@@ -212,3 +212,7 @@ class DailyReport(BaseModel):
         default_factory=list,
         description="Tickers with anomalies from Stage 1 market scan (LLM mode)",
     )
+    force_full_analysis_used: bool = Field(
+        default=False,
+        description="Whether --force-full-analysis flag was provided to override empty anomaly results",
+    )

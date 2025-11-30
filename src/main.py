@@ -1,5 +1,8 @@
 """NordInvest CLI interface."""
 
+import json
+import re
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -256,9 +259,6 @@ def _create_signal_from_llm_result(
     try:
         # Parse LLM result if it's a string
         if isinstance(llm_result, str):
-            import json
-            import re
-
             # Clean up common formatting issues
             llm_result = llm_result.strip()
 
@@ -317,8 +317,6 @@ def _create_signal_from_llm_result(
         )
 
         # Create signal with proper schema
-        from datetime import datetime
-
         # Fetch actual current price and currency from cache
         current_price = llm_result.get("current_price", 0.0)
         currency = llm_result.get("currency", "USD")
@@ -583,8 +581,6 @@ def analyze(
             available_categories = get_us_categories()
             invalid_categories = [c for c in categories if c not in available_categories]
             if invalid_categories:
-                import sys
-
                 typer.echo(
                     f"❌ Error: Invalid category(ies): {', '.join(invalid_categories)}",
                     err=True,
@@ -646,6 +642,7 @@ def analyze(
         analyzed_market = None
         analyzed_tickers_specified = []
         tickers_with_anomalies = []
+        force_full_analysis_used = False
 
         if ticker:
             analyzed_tickers_specified = [t.strip().upper() for t in ticker.split(",")]
@@ -665,13 +662,16 @@ def analyze(
                 filtered_ticker_list = _scan_market_for_anomalies(
                     ticker_list, pipeline, typer, force_full_analysis
                 )
-                # Save anomalies for report context (if different from full list)
-                if len(filtered_ticker_list) < len(ticker_list):
+                # If force_full_analysis is False and we got here, anomalies were found
+                # If force_full_analysis is True and no filtering happened, flag was used
+                if force_full_analysis and len(filtered_ticker_list) == len(ticker_list):
+                    # --force-full-analysis was used and no anomalies were found
+                    force_full_analysis_used = True
+                else:
+                    # Anomalies were found (whether filtered or not)
                     tickers_with_anomalies = filtered_ticker_list
             except RuntimeError as e:
                 # Display error cleanly without traceback
-                import sys
-
                 typer.echo(f"\n❌ Error: {str(e)}", err=True)
                 sys.exit(1)
 
@@ -717,6 +717,7 @@ def analyze(
                 analyzed_tickers_specified=analyzed_tickers_specified,
                 initial_tickers=ticker_list,
                 tickers_with_anomalies=tickers_with_anomalies,
+                force_full_analysis_used=force_full_analysis_used,
             )
 
             # Display summary
@@ -747,8 +748,6 @@ def analyze(
                     typer.echo(f"  Report saved: {report_path}")
                 else:
                     report_path = reports_dir / f"report_{report.report_date}_{timestamp}.json"
-                    import json
-
                     with open(report_path, "w") as f:
                         json.dump(pipeline.report_generator.to_json(report), f, indent=2)
                     typer.echo(f"  Report saved: {report_path}")
