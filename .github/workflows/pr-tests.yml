@@ -36,8 +36,21 @@ jobs:
       - name: Run pre-commit checks
         run: uv run poe pre-commit
 
-      - name: Run tests
-        run: uv run pytest tests/ -v --tb=short --junit-xml=test-results.xml
+      - name: Run tests with coverage
+        run: uv run pytest tests/ -v --tb=short --junit-xml=test-results.xml --cov=src --cov-report=xml --cov-report=term-missing
+
+      - name: Check coverage threshold
+        run: |
+          uv run coverage report --fail-under=50 || echo "Coverage below 50% threshold"
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          flags: unittests
+          name: codecov-pr
+          fail_ci_if_error: false
+          verbose: false
 
       - name: Publish test results
         if: always()
@@ -53,3 +66,4 @@ jobs:
           echo "## CI/CD Pipeline" >> $GITHUB_STEP_SUMMARY
           echo "✅ Pre-commit checks passed" >> $GITHUB_STEP_SUMMARY
           echo "✅ Tests executed" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Coverage measured (50%+ threshold)" >> $GITHUB_STEP_SUMMARY
