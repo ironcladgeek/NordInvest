@@ -261,6 +261,53 @@ NordInvest/
 
 ## Development Workflow
 
+### Commit Guidelines
+
+**IMPORTANT: Keep commits small and focused!**
+
+Each commit should:
+- Address a **single task or feature**
+- Include **2-4 files** maximum (ideally)
+- Have a clear, descriptive message
+- Be easy to review and revert if needed
+
+**Why small commits matter:**
+- Easier to track changes in git history
+- Simpler code reviews
+- Faster to identify bugs via `git bisect`
+- Cleaner rollbacks when needed
+
+**Examples of GOOD commits:**
+```bash
+# Single feature, few files
+git commit -m "feat(agents): add RSI calculation to technical agent"
+# Files: src/agents/analysis.py, tests/unit/agents/test_analysis.py
+
+# Bug fix, minimal scope
+git commit -m "fix(cache): correct TTL calculation for overnight data"
+# Files: src/cache/manager.py
+
+# Documentation update
+git commit -m "docs: add LLM troubleshooting section"
+# Files: docs/llm_cli_guide.md, README.md
+```
+
+**Examples of BAD commits (avoid these):**
+```bash
+# Too broad, too many files
+git commit -m "feat: implement technical analysis"
+# Files: 15+ files changed - hard to review!
+
+# Mixing unrelated changes
+git commit -m "fix: various fixes and improvements"
+# Files: random changes across the codebase
+```
+
+**If your commit has 5+ files, ask yourself:**
+- Can this be split into multiple logical commits?
+- Am I mixing unrelated changes?
+- Would this be easy to review?
+
 ### Before Committing
 
 1. Run linting and formatting:
