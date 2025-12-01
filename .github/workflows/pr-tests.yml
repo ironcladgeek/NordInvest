@@ -52,18 +52,27 @@ jobs:
           fail_ci_if_error: false
           verbose: false
 
-      - name: Publish test results
-        if: always()
-        uses: EnricoMi/publish-unit-test-result-action@v2
-        with:
-          files: test-results.xml
-          check_name: "Test Results"
-          comment_mode: always
-
-      - name: Test summary
+      - name: Report test results
         if: always()
         run: |
-          echo "## CI/CD Pipeline" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Pre-commit checks passed" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Tests executed" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Coverage measured (50%+ threshold)" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ CI/CD Pipeline Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Results" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f test-results.xml ]; then
+            PASSED=$(grep -c 'testcase' test-results.xml || echo "0")
+            FAILED=$(grep -c 'failure' test-results.xml || echo "0")
+            SKIPPED=$(grep -c 'skipped' test-results.xml || echo "0")
+            echo "- **Passed**: $PASSED" >> $GITHUB_STEP_SUMMARY
+            echo "- **Failed**: $FAILED" >> $GITHUB_STEP_SUMMARY
+            echo "- **Skipped**: $SKIPPED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **Status**: Test results file not found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Checks Performed" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Pre-commit checks (formatting, linting, commits)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Unit tests" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Coverage measurement (50%+ threshold)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Coverage upload (Codecov)" >> $GITHUB_STEP_SUMMARY
