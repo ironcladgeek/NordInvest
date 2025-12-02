@@ -299,12 +299,61 @@ class CacheManager:
     def _get_file_path(self, key: str) -> Path:
         """Get file path for cache key.
 
+        Converts cache key to a consistent, readable filename format.
+        Examples:
+            prices:AAPL:2025-11-01:2025-12-01 -> AAPL_prices_2025-11-01_2025-12-01.json
+            news_sentiment:ZS -> ZS_news_2025-12-02.json
+            fundamental_enriched:MSFT -> MSFT_fundamental_2025-12-02.json
+
         Args:
-            key: Cache key
+            key: Cache key in format type:ticker:params
 
         Returns:
             File path for the key
         """
-        # Sanitize key to be filesystem safe
-        safe_key = key.replace("/", "_").replace(":", "_")
-        return self.cache_dir / f"{safe_key}.json"
+        # Parse key to create structured filename
+        parts = key.split(":")
+
+        if len(parts) >= 2:
+            type_name = parts[0].replace("_", "-")
+            ticker = parts[1].upper()
+
+            # Format additional params in a readable way
+            params_parts = []
+            for i, param in enumerate(parts[2:], start=2):
+                # If it looks like a date (YYYY-MM-DD), keep as-is
+                if len(param) == 10 and param[4] == "-" and param[7] == "-":
+                    params_parts.append(param)
+                # Otherwise, use generic param naming
+                elif param.isdigit():
+                    # Common param patterns
+                    param_names = ["limit", "maxage", "param3", "param4"]
+                    param_idx = i - 2  # Adjust for params starting at index 2
+                    if param_idx < len(param_names):
+                        params_parts.append(f"{param_names[param_idx]}{param}")
+                    else:
+                        params_parts.append(param)
+                else:
+                    params_parts.append(param)
+
+            # Build filename: ticker_type_params.json
+            # For fundamental_enriched and news_sentiment, add today's date
+            if type_name in ["fundamental-enriched", "news-sentiment"] and not params_parts:
+                fetch_date = datetime.now().strftime("%Y-%m-%d")
+                if type_name == "fundamental-enriched":
+                    filename = f"{ticker}_fundamental_{fetch_date}.json"
+                else:  # news-sentiment
+                    filename = f"{ticker}_news_{fetch_date}.json"
+            elif params_parts:
+                params_str = "_".join(params_parts)
+                filename = f"{ticker}_{type_name}_{params_str}.json"
+            else:
+                filename = f"{ticker}_{type_name}.json"
+        else:
+            # Fallback for non-standard keys
+            safe_key = key.replace("/", "_").replace(":", "_")
+            filename = f"{safe_key}.json"
+
+        # Sanitize filename
+        filename = filename.replace("/", "_")
+        return self.cache_dir / filename
