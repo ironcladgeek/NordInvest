@@ -97,14 +97,12 @@ class FinnhubProvider(DataProvider):
         self,
         ticker: str,
         limit: int = 50,
-        max_age_hours: int = 168,
     ) -> list[NewsArticle]:
         """Fetch news articles from Finnhub.
 
         Args:
             ticker: Stock ticker symbol
             limit: Maximum number of articles to return (default: 50)
-            max_age_hours: Maximum age of articles in hours (default: 168 = 7 days)
 
         Returns:
             List of NewsArticle objects sorted by date descending
@@ -119,9 +117,9 @@ class FinnhubProvider(DataProvider):
         try:
             logger.debug(f"Fetching news for {ticker} (limit={limit})")
 
-            # Calculate date range based on max_age_hours
+            # Fetch recent news articles
             to_date = datetime.now()
-            from_date = to_date - timedelta(hours=max_age_hours)
+            from_date = to_date - timedelta(days=30)
 
             response = requests.get(
                 f"{FINNHUB_BASE_URL}/company-news",
