@@ -1,7 +1,9 @@
 """CrewAI tool adapters for analysis functions."""
 
 import json
+import time
 from datetime import date, datetime
+from functools import wraps
 
 from crewai.tools import tool
 
@@ -10,6 +12,43 @@ from src.tools.fetchers import FinancialDataFetcherTool, NewsFetcherTool, PriceF
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def tool_with_timeout(timeout_seconds=30):
+    """Decorator to add timeout handling to tool functions.
+
+    Args:
+        timeout_seconds: Maximum time to wait for tool execution
+
+    Returns:
+        Decorator function
+    """
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                start_time = time.time()
+                result = func(*args, **kwargs)
+                elapsed = time.time() - start_time
+                if elapsed > timeout_seconds:
+                    logger.warning(
+                        f"Tool {func.__name__} took {elapsed:.1f}s (exceeded {timeout_seconds}s timeout)"
+                    )
+                return result
+            except TimeoutError as e:
+                logger.error(f"Tool {func.__name__} timed out after {timeout_seconds}s: {e}")
+                return json.dumps({"error": f"Tool execution timed out after {timeout_seconds}s"})
+            except Exception as e:
+                logger.error(
+                    f"Tool {func.__name__} raised exception: {type(e).__name__}: {e}",
+                    exc_info=False,
+                )
+                return json.dumps({"error": str(e), "error_type": type(e).__name__})
+
+        return wrapper
+
+    return decorator
 
 
 def json_serial(obj):
@@ -48,6 +87,7 @@ class CrewAIToolAdapter:
         """
 
         @tool("Fetch Price Data")
+        @tool_with_timeout(timeout_seconds=15)
         def fetch_price_data(ticker: str, days_back: int = 60) -> str:
             """Fetch historical and current price data for an instrument.
 
@@ -59,13 +99,17 @@ class CrewAIToolAdapter:
                 JSON string with summary of price data (full data cached for other tools)
             """
             try:
+                logger.info(f"Fetching price data for {ticker} ({days_back} days)")
                 result = self.price_fetcher.run(ticker, days_back=days_back)
                 if "error" in result:
+                    logger.error(f"Price fetcher returned error for {ticker}: {result['error']}")
                     return json.dumps({"error": result["error"]})
 
                 # Store full data in cache for technical analysis
                 cache_key = f"prices_{ticker}"
-                self._data_cache[cache_key] = result.get("prices", [])
+                prices_list = result.get("prices", [])
+                self._data_cache[cache_key] = prices_list
+                logger.debug(f"Cached {len(prices_list)} price points for {ticker}")
 
                 # Return only summary to avoid truncation
                 summary = {
@@ -78,12 +122,16 @@ class CrewAIToolAdapter:
                     "message": f"Fetched {result.get('count', 0)} price data points. Use cache_key '{cache_key}' for technical analysis.",
                 }
 
+                logger.info(f"Price data fetch successful for {ticker}: {summary['count']} records")
                 return json.dumps(summary, default=json_serial)
             except Exception as e:
-                logger.error(f"Error fetching price data for {ticker}: {e}")
+                logger.error(
+                    f"Unexpected error fetching price data for {ticker}: {e}", exc_info=True
+                )
                 return json.dumps({"error": str(e)})
 
         @tool("Calculate Technical Indicators")
+        @tool_with_timeout(timeout_seconds=15)
         def calculate_technical_indicators(ticker: str) -> str:
             """Calculate technical indicators and return pre-computed analysis.
 
@@ -97,9 +145,13 @@ class CrewAIToolAdapter:
                 JSON string with calculated indicators and automated technical analysis
             """
             try:
+                logger.info(f"Calculating technical indicators for {ticker}")
                 # Use cached price data
                 cache_key = f"prices_{ticker}"
                 if cache_key not in self._data_cache:
+                    logger.warning(
+                        f"No cached price data for {ticker}. Call fetch_price_data first."
+                    )
                     return json.dumps(
                         {
                             "error": f"No price data cached for {ticker}. Call fetch_price_data first."
@@ -108,11 +160,15 @@ class CrewAIToolAdapter:
 
                 prices = self._data_cache[cache_key]
                 if not prices:
+                    logger.error(f"Cached price list is empty for {ticker}")
                     return json.dumps({"error": "No price data available"})
+
+                logger.debug(f"Using {len(prices)} cached price points for {ticker}")
 
                 # Perform rule-based technical analysis calculations
                 result = self.technical_tool.run(prices)
                 if "error" in result:
+                    logger.error(f"Technical tool returned error for {ticker}: {result['error']}")
                     return json.dumps({"error": result["error"]})
 
                 # Add interpretation hints for the LLM (but calculations are done)
@@ -121,17 +177,23 @@ class CrewAIToolAdapter:
                     "Technical indicators calculated using mathematical formulas. LLM should interpret these signals."
                 )
 
+                logger.info(f"Technical indicators calculated successfully for {ticker}")
                 return json.dumps(result, default=json_serial)
             except Exception as e:
-                logger.error(f"Error calculating technical indicators: {e}")
+                logger.error(
+                    f"Unexpected error calculating technical indicators for {ticker}: {e}",
+                    exc_info=True,
+                )
                 return json.dumps({"error": str(e)})
 
         @tool("Analyze Sentiment")
+        @tool_with_timeout(timeout_seconds=20)
         def analyze_sentiment(ticker: str, max_articles: int = 50) -> str:
             """Fetch news and perform LLM-based sentiment analysis.
 
             This tool fetches news articles and uses LLM to analyze sentiment
             (since providers often don't include sentiment data).
+            Includes fallback mechanism if API is unavailable.
 
             Args:
                 ticker: Stock ticker symbol
@@ -141,20 +203,38 @@ class CrewAIToolAdapter:
                 JSON string with news articles for LLM sentiment analysis
             """
             try:
-                # Fetch news articles
+                logger.info(f"Fetching news articles for {ticker}")
+                # Fetch news articles with timeout protection
                 news_result = self.news_fetcher.run(ticker, limit=max_articles)
+
                 if "error" in news_result:
-                    return json.dumps({"error": news_result["error"]})
-
-                articles = news_result.get("articles", [])
-
-                if not articles:
+                    logger.warning(f"News fetch failed for {ticker}: {news_result.get('error')}")
+                    # Return neutral fallback - agent can still provide analysis
                     return json.dumps(
                         {
                             "ticker": ticker,
                             "articles": [],
                             "count": 0,
-                            "note": "No news articles found for analysis",
+                            "fallback_mode": True,
+                            "note": (
+                                f"News fetch failed: {news_result.get('error')}. "
+                                "Unable to fetch articles for sentiment analysis. "
+                                "Please analyze based on available market data and provide neutral to cautious assessment."
+                            ),
+                        }
+                    )
+
+                articles = news_result.get("articles", [])
+                logger.debug(f"Fetched {len(articles)} articles for {ticker}")
+
+                if not articles:
+                    logger.info(f"No articles found for {ticker}")
+                    return json.dumps(
+                        {
+                            "ticker": ticker,
+                            "articles": [],
+                            "count": 0,
+                            "note": "No news articles available for analysis. Use neutral sentiment assessment.",
                         }
                     )
 
@@ -183,12 +263,31 @@ class CrewAIToolAdapter:
                     ),
                 }
 
+                logger.info(
+                    f"Sentiment analysis prepared for {ticker} with {len(articles_for_analysis)} articles"
+                )
                 return json.dumps(result, default=json_serial)
             except Exception as e:
-                logger.error(f"Error analyzing sentiment for {ticker}: {e}")
-                return json.dumps({"error": str(e)})
+                logger.error(
+                    f"Unexpected error in sentiment analysis for {ticker}: {e}", exc_info=True
+                )
+                # Return graceful fallback even on exception
+                return json.dumps(
+                    {
+                        "ticker": ticker,
+                        "articles": [],
+                        "count": 0,
+                        "fallback_mode": True,
+                        "error": str(e),
+                        "note": (
+                            "An error occurred while fetching news articles. "
+                            "Please provide sentiment assessment based on other available data sources."
+                        ),
+                    }
+                )
 
         @tool("Fetch Fundamental Data")
+        @tool_with_timeout(timeout_seconds=25)
         def fetch_fundamental_data(ticker: str) -> str:
             """Fetch fundamental data using free tier APIs.
 
@@ -204,11 +303,50 @@ class CrewAIToolAdapter:
                 JSON string with analyst consensus, sentiment, and momentum data
             """
             try:
+                logger.info(f"Fetching fundamental data for {ticker}")
                 # Fetch fundamental data using the tool
                 fundamental_result = self.fundamental_fetcher.run(ticker)
 
                 if "error" in fundamental_result:
-                    return json.dumps({"error": fundamental_result["error"]})
+                    logger.warning(
+                        f"Fundamental data fetch error for {ticker}: {fundamental_result.get('error')}"
+                    )
+                    # Return graceful fallback even on error
+                    return json.dumps(
+                        {
+                            "ticker": ticker,
+                            "data_availability": "limited",
+                            "analyst_consensus": {
+                                "available": False,
+                                "strong_buy": 0,
+                                "buy": 0,
+                                "hold": 0,
+                                "sell": 0,
+                                "strong_sell": 0,
+                                "total_analysts": 0,
+                                "period": "unknown",
+                            },
+                            "news_sentiment": {
+                                "available": False,
+                                "positive": 0,
+                                "negative": 0,
+                                "neutral": 0,
+                                "note": "Unable to fetch sentiment data",
+                            },
+                            "price_momentum": {
+                                "available": False,
+                                "change_percent": 0,
+                                "trend": "neutral",
+                                "latest_price": None,
+                                "period_days": 30,
+                            },
+                            "data_sources": "Limited data availability",
+                            "note": (
+                                f"Error fetching fundamental data: {fundamental_result.get('error')}. "
+                                "Please provide analysis based on available market data."
+                            ),
+                        }
+                    )
 
                 # Extract data components
                 analyst_data = fundamental_result.get("analyst_data", {})
@@ -222,6 +360,11 @@ class CrewAIToolAdapter:
                     sentiment.get("positive", 0) + sentiment.get("negative", 0) > 0
                 )
                 has_price_data = price_context and price_context.get("change_percent") is not None
+
+                logger.debug(
+                    f"Fundamental data for {ticker}: analyst={has_analyst_data}, "
+                    f"sentiment={has_sentiment_data}, price={has_price_data}"
+                )
 
                 # Format for LLM analysis
                 result = {
@@ -265,10 +408,49 @@ class CrewAIToolAdapter:
                     ),
                 }
 
+                logger.info(f"Fundamental analysis prepared for {ticker}")
                 return json.dumps(result, default=json_serial)
             except Exception as e:
-                logger.error(f"Error fetching fundamental data for {ticker}: {e}")
-                return json.dumps({"error": str(e)})
+                logger.error(
+                    f"Unexpected error fetching fundamental data for {ticker}: {e}", exc_info=True
+                )
+                # Return graceful fallback even on exception
+                return json.dumps(
+                    {
+                        "ticker": ticker,
+                        "data_availability": "unavailable",
+                        "analyst_consensus": {
+                            "available": False,
+                            "strong_buy": 0,
+                            "buy": 0,
+                            "hold": 0,
+                            "sell": 0,
+                            "strong_sell": 0,
+                            "total_analysts": 0,
+                            "period": "unknown",
+                        },
+                        "news_sentiment": {
+                            "available": False,
+                            "positive": 0,
+                            "negative": 0,
+                            "neutral": 0,
+                            "note": "Unable to fetch sentiment data",
+                        },
+                        "price_momentum": {
+                            "available": False,
+                            "change_percent": 0,
+                            "trend": "neutral",
+                            "latest_price": None,
+                            "period_days": 30,
+                        },
+                        "data_sources": "No data available",
+                        "error": str(e),
+                        "note": (
+                            "An error occurred while fetching fundamental data. "
+                            "Please provide analysis based on available technical indicators and other market data."
+                        ),
+                    }
+                )
 
         return [
             fetch_price_data,
