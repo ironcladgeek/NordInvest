@@ -127,7 +127,7 @@ class CrewAIToolAdapter:
                 return json.dumps({"error": str(e)})
 
         @tool("Analyze Sentiment")
-        def analyze_sentiment(ticker: str, max_articles: int = 50, max_age_hours: int = 168) -> str:
+        def analyze_sentiment(ticker: str, max_articles: int = 50) -> str:
             """Fetch news and perform LLM-based sentiment analysis.
 
             This tool fetches news articles and uses LLM to analyze sentiment
@@ -136,16 +136,13 @@ class CrewAIToolAdapter:
             Args:
                 ticker: Stock ticker symbol
                 max_articles: Maximum number of articles to fetch
-                max_age_hours: Maximum age of articles in hours
 
             Returns:
                 JSON string with news articles for LLM sentiment analysis
             """
             try:
                 # Fetch news articles
-                news_result = self.news_fetcher.run(
-                    ticker, limit=max_articles, max_age_hours=max_age_hours
-                )
+                news_result = self.news_fetcher.run(ticker, limit=max_articles)
                 if "error" in news_result:
                     return json.dumps({"error": news_result["error"]})
 
