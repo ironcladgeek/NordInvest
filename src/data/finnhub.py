@@ -97,12 +97,17 @@ class FinnhubProvider(DataProvider):
         self,
         ticker: str,
         limit: int = 50,
+        as_of_date: datetime | None = None,
     ) -> list[NewsArticle]:
         """Fetch news articles from Finnhub.
+
+        Supports historical news fetching for backtesting with strict date filtering
+        to prevent look-ahead bias.
 
         Args:
             ticker: Stock ticker symbol
             limit: Maximum number of articles to return (default: 50)
+            as_of_date: Optional date for historical news (only fetch news before this date)
 
         Returns:
             List of NewsArticle objects sorted by date descending
@@ -115,11 +120,18 @@ class FinnhubProvider(DataProvider):
             raise ValueError("Finnhub API key is not configured")
 
         try:
-            logger.debug(f"Fetching news for {ticker} (limit={limit})")
+            logger.debug(f"Fetching news for {ticker} (limit={limit}, as_of_date={as_of_date})")
 
-            # Fetch recent news articles
-            to_date = datetime.now()
-            from_date = to_date - timedelta(days=30)
+            # Fetch news articles with historical support
+            if as_of_date:
+                # For historical analysis, fetch news up to the analysis date
+                to_date = as_of_date
+                from_date = to_date - timedelta(days=90)  # 90-day lookback for historical
+                logger.debug(f"Fetching historical news from {from_date} to {to_date}")
+            else:
+                # For current analysis, fetch recent news (30 days)
+                to_date = datetime.now()
+                from_date = to_date - timedelta(days=30)
 
             response = requests.get(
                 f"{FINNHUB_BASE_URL}/company-news",

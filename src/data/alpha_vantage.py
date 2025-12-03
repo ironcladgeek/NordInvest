@@ -250,6 +250,7 @@ class AlphaVantageProvider(DataProvider):
         self,
         ticker: str,
         limit: int = 50,
+        as_of_date: datetime | None = None,
     ) -> list[NewsArticle]:
         """Fetch news articles with sentiment analysis from Alpha Vantage.
 
@@ -259,9 +260,13 @@ class AlphaVantageProvider(DataProvider):
         - Ticker-specific sentiment scores and relevance
         - Topics with relevance scores
 
+        Supports historical news fetching for backtesting with strict date filtering
+        to prevent look-ahead bias.
+
         Args:
             ticker: Stock ticker symbol
             limit: Maximum number of articles to return (default: 50)
+            as_of_date: Optional date for historical news (only fetch news before this date)
 
         Returns:
             List of NewsArticle objects with sentiment data, sorted by date descending
@@ -274,16 +279,28 @@ class AlphaVantageProvider(DataProvider):
             raise ValueError("Alpha Vantage API key is not configured")
 
         try:
-            logger.debug(f"Fetching news sentiment for {ticker} (limit={limit})")
+            logger.debug(
+                f"Fetching news sentiment for {ticker} (limit={limit}, as_of_date={as_of_date})"
+            )
 
-            # Call NEWS_SENTIMENT API without time filters
-            # Alpha Vantage sorts by LATEST automatically, so we get the most recent articles
+            # Build NEWS_SENTIMENT API params with optional historical date filtering
             params = {
                 "function": "NEWS_SENTIMENT",
                 "tickers": ticker,
-                "limit": limit,  # Request exactly what we need
+                "limit": limit * 2,  # Request more to account for filtering by date
                 "sort": "LATEST",  # Get newest first
             }
+
+            # Add time range for historical analysis (prevent look-ahead bias)
+            # Request more articles to ensure we get enough historical articles
+            # Note: Alpha Vantage's time_from returns articles >= that time
+            # For historical analysis, we'll request a larger range and filter in Python
+            if as_of_date:
+                # Use time_to to get articles up to this date (if API supports it)
+                # Format: YYYYMMDDTHHMM (example: 20240601T2359 for June 1, 2024 at 11:59 PM)
+                time_to = as_of_date.strftime("%Y%m%dT2359")
+                params["time_to"] = time_to
+                logger.debug(f"Filtering news up to {as_of_date}")
 
             logger.debug(f"Alpha Vantage NEWS_SENTIMENT params: {params}")
             data = self._api_call(params)
@@ -317,6 +334,15 @@ class AlphaVantageProvider(DataProvider):
                                 pass  # Use date only
                     else:
                         published_date = datetime.now()
+
+                    # CLIENT-SIDE FILTERING: For historical analysis, ensure no future articles
+                    # This prevents look-ahead bias even if API parameter filtering is incomplete
+                    if as_of_date and published_date.date() > as_of_date.date():
+                        logger.debug(
+                            f"Filtering out future article (pub: {published_date.date()}, "
+                            f"analysis: {as_of_date.date()})"
+                        )
+                        continue
 
                     # Extract ticker-specific sentiment
                     ticker_sentiment_score = None

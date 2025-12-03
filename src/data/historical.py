@@ -136,9 +136,11 @@ class HistoricalDataFetcher:
             context.missing_data_warnings.append(f"Fundamentals fetch error: {str(e)}")
 
         # Fetch news (if supported)
+        # Pass as_of_date to enable provider-level historical filtering
         try:
-            news_articles = self.provider.get_news(ticker)
-            # Filter to only news published before as_of_date
+            news_articles = self.provider.get_news(ticker, as_of_date=as_of_datetime)
+            # Double-check: Filter to only news published before as_of_date (defense in depth)
+            # This ensures strict look-ahead bias prevention even if provider filtering incomplete
             filtered_news = [
                 article
                 for article in news_articles
