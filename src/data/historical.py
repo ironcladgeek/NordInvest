@@ -142,7 +142,10 @@ class HistoricalDataFetcher:
 
         # Fetch fundamentals (if supported)
         try:
+            # Note: Financial statements are typically fetched directly from provider
+            # as they are not commonly cached in the same format as prices/news
             statements = self.provider.get_financial_statements(ticker)
+
             # Filter to only statements available before as_of_date
             filtered_statements = [
                 stmt for stmt in statements if stmt.report_date.date() <= as_of_date_only
@@ -163,11 +166,13 @@ class HistoricalDataFetcher:
             context.missing_data_warnings.append(f"Fundamentals fetch error: {str(e)}")
 
         # Fetch news (if supported)
-        # Pass as_of_date to enable provider-level historical filtering
         try:
+            # Always call provider with as_of_date for proper historical filtering
+            # The provider will return only news published before as_of_date
             news_articles = self.provider.get_news(ticker, as_of_date=as_of_datetime)
+
             # Double-check: Filter to only news published before as_of_date (defense in depth)
-            # This ensures strict look-ahead bias prevention even if provider filtering incomplete
+            # This ensures strict look-ahead bias prevention
             filtered_news = [
                 article
                 for article in news_articles
@@ -205,12 +210,12 @@ class HistoricalDataFetcher:
             logger.warning(f"Error fetching metadata for {ticker}: {e}")
 
         # Fetch earnings estimates (if supported)
-        # Note: Earnings estimates are forward-looking data that change daily.
-        # Alpha Vantage provides historical snapshots (_7_days_ago, _30_days_ago, etc.)
-        # For historical analysis, uses the appropriate historical snapshot.
+        # For historical analysis: Always call provider with as_of_date parameter
+        # The provider will return only estimates appropriate for that date
         try:
             if hasattr(self.provider, "get_earnings_estimates"):
                 estimates = self.provider.get_earnings_estimates(ticker, as_of_date=as_of_datetime)
+
                 if estimates:
                     context.earnings_estimates = estimates
                     logger.debug(f"Fetched earnings estimates for {ticker}")
