@@ -541,33 +541,35 @@ class AlphaVantageProvider(DataProvider):
                 except (ValueError, TypeError):
                     continue
 
+                # For current analysis: use standard "next" pattern
+                if not as_of_date_only:
+                    if "next" in horizon and "quarter" in horizon and not next_quarter:
+                        next_quarter = estimate
+                    elif "next" in horizon and "year" in horizon and not next_year:
+                        next_year = estimate
                 # For historical analysis: select estimates AFTER the analysis date
-                if as_of_date_only:
+                else:
                     if (
-                        "quarter" in horizon
+                        "historical" in horizon
+                        and "quarter" in horizon
                         and estimate_date > as_of_date_only
                         and not next_quarter
                     ):
                         next_quarter = estimate
-                    elif "year" in horizon and estimate_date > as_of_date_only and not next_year:
-                        next_year = estimate
-                # For current analysis: use standard "next" pattern
-                else:
-                    if "next" in horizon and "quarter" in horizon and not next_quarter:
-                        next_quarter = estimate
-                    elif "next" in horizon and "year" in horizon and not next_year:
+                    elif (
+                        "historical" in horizon
+                        and "year" in horizon
+                        and estimate_date > as_of_date_only
+                        and not next_year
+                    ):
                         next_year = estimate
 
             result = {
                 "ticker": data.get("symbol", ticker),
                 "next_quarter": (
-                    self._parse_earnings_estimate(next_quarter, as_of_date)
-                    if next_quarter
-                    else None
+                    self._parse_earnings_estimate(next_quarter) if next_quarter else None
                 ),
-                "next_year": (
-                    self._parse_earnings_estimate(next_year, as_of_date) if next_year else None
-                ),
+                "next_year": (self._parse_earnings_estimate(next_year) if next_year else None),
             }
 
             logger.debug(f"Retrieved earnings estimates for {ticker}")
@@ -580,12 +582,11 @@ class AlphaVantageProvider(DataProvider):
             raise RuntimeError(f"Failed to fetch earnings estimates for {ticker}: {e}")
 
     @staticmethod
-    def _parse_earnings_estimate(estimate: dict, as_of_date: Optional[datetime] = None) -> dict:
+    def _parse_earnings_estimate(estimate: dict) -> dict:
         """Parse earnings estimate data.
 
         Args:
             estimate: Raw estimate data from API
-            as_of_date: Historical date (only used for logging context)
 
         Returns:
             Parsed estimate dictionary
