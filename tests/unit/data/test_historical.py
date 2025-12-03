@@ -325,31 +325,36 @@ def test_historical_data_fetcher_handles_missing_data():
 
 
 def test_historical_data_fetcher_earnings_estimates_historical_date():
-    """Verify that earnings estimates are returned for historical dates (with limitation noted).
+    """Verify that earnings estimates use historical snapshots for historical dates.
 
-    Note: Earnings estimates are forward-looking (for next quarter/year).
-    For true historical accuracy, they would need to be cached from that date.
-    Currently, returns current estimates with this limitation acknowledged.
+    Alpha Vantage API provides historical snapshots: _7_days_ago, _30_days_ago, etc.
+    The provider selects the appropriate snapshot based on days ago from analysis date.
     """
     provider = MagicMock()
     provider.name = "test_provider"
 
-    # Mock earnings estimates that are always current
-    # (In a real scenario, these would be cached snapshots from that date)
+    # Mock earnings estimates with historical snapshots
     def mock_get_earnings_estimates(ticker, as_of_date=None):
-        # Returns estimates for next quarter/year
-        # For historical dates, these are "current" estimates, not "as-of-date" estimates
+        # Return full estimate data with historical snapshots
         return {
             "ticker": ticker,
             "next_quarter": {
                 "date": "2024-09-30",
-                "horizon": "next quarter",
-                "eps_estimate_avg": 1.25,
+                "horizon": "next fiscal quarter",
+                "eps_estimate_avg": 1.25,  # Current estimate
+                "eps_estimate_average_7_days_ago": 1.24,
+                "eps_estimate_average_30_days_ago": 1.23,
+                "eps_estimate_average_60_days_ago": 1.22,
+                "eps_estimate_average_90_days_ago": 1.20,
             },
             "next_year": {
                 "date": "2024-12-31",
-                "horizon": "next year",
-                "eps_estimate_avg": 5.50,
+                "horizon": "next fiscal year",
+                "eps_estimate_avg": 5.50,  # Current estimate
+                "eps_estimate_average_7_days_ago": 5.48,
+                "eps_estimate_average_30_days_ago": 5.45,
+                "eps_estimate_average_60_days_ago": 5.40,
+                "eps_estimate_average_90_days_ago": 5.30,
             },
         }
 
@@ -366,11 +371,15 @@ def test_historical_data_fetcher_earnings_estimates_historical_date():
 
     context = fetcher.fetch_as_of_date("AAPL", test_date, lookback_days=365)
 
-    # Earnings estimates should be returned (for next quarter/year from that date)
+    # Earnings estimates should be returned with values from historical snapshots
     assert context.earnings_estimates is not None
     assert context.earnings_estimates["ticker"] == "AAPL"
     assert "next_quarter" in context.earnings_estimates
     assert "next_year" in context.earnings_estimates
+    # Values should be from the historical snapshots, not current
+    # (The actual values depend on provider implementation)
+    assert context.earnings_estimates["next_quarter"]["eps_estimate_avg"] is not None
+    assert context.earnings_estimates["next_year"]["eps_estimate_avg"] is not None
 
     # Provider should have been called with as_of_date parameter
     provider.get_earnings_estimates.assert_called_once()

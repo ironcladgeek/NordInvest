@@ -179,7 +179,8 @@ class HistoricalDataFetcher:
 
         # Fetch earnings estimates (if supported)
         # Note: Earnings estimates are forward-looking data that change daily.
-        # For historical analysis, returns None to prevent look-ahead bias.
+        # Alpha Vantage provides historical snapshots (_7_days_ago, _30_days_ago, etc.)
+        # For historical analysis, uses the appropriate historical snapshot.
         try:
             if hasattr(self.provider, "get_earnings_estimates"):
                 estimates = self.provider.get_earnings_estimates(ticker, as_of_date=as_of_datetime)
@@ -187,10 +188,7 @@ class HistoricalDataFetcher:
                     context.earnings_estimates = estimates
                     logger.debug(f"Fetched earnings estimates for {ticker}")
                 else:
-                    logger.debug(
-                        f"No earnings estimates available for {ticker} "
-                        f"(None for historical dates to prevent look-ahead bias)"
-                    )
+                    logger.debug(f"No earnings estimates available for {ticker}")
         except NotImplementedError:
             logger.debug(f"Provider {self.provider.name} does not support earnings estimates")
         except Exception as e:
