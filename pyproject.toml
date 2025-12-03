@@ -21,6 +21,7 @@ dependencies = [
     "yfinance>=0.2.32",
     "langchain-ollama>=1.0.0",
     "litellm>=1.80.7",
+    "sqlmodel>=0.0.27",
 ]
 
 [dependency-groups]
