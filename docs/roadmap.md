@@ -17,13 +17,13 @@ This roadmap outlines the implementation plan for building an AI-driven financia
 | Phase 5 | Days 13-14 | Integration, Testing & Polish | ✅ Complete |
 | Phase 6 | Days 15-18 | CrewAI & LLM Integration | ✅ Complete |
 | Phase 7 | Days 19-20 | True Test Mode | ✅ Complete |
-| Phase 8.1 | Next | Historical Date Analysis | ✅ **COMPLETE** |
-| Phase 8.2 | Next | Backtesting Framework | 📋 HIGH PRIORITY |
-| Phase 9 | Future | Per-Agent LLM Model Configuration | 📋 Planned |
-| Phase 10 | Future | Devil's Advocate Agent | 📋 Planned |
-| Phase 11 | Future | Performance Tracking & Database | 📋 Planned |
+| Phase 8 | Complete | Historical Date Analysis | ✅ **COMPLETE** |
+| Phase 9 | Next | Historical Database & Performance Tracking | 📋 **HIGH PRIORITY** |
+| Phase 10 | Future | Per-Agent LLM Model Configuration | 📋 Planned |
+| Phase 11 | Future | Devil's Advocate Agent | 📋 Planned |
 | Phase 12 | Future | Enhanced Technical Analysis | 📋 Planned |
 | Phase 13 | Future | Advanced Features & Integrations | 📋 Planned |
+| Phase 14 | Future | Backtesting Framework | 📋 Planned |
 
 ---
 
@@ -547,21 +547,15 @@ The previous `--test` flag simply ran analysis on `AAPL` with live data, which w
 
 ---
 
-## Phase 8: Historical Analysis & Backtesting
+## Phase 8: Historical Date Analysis
 
-### 🚨 **HIGH PRIORITY** - Essential for System Validation
+### ✅ **COMPLETE** - Enables Backtesting and Historical Analysis
 
 ### Overview
 
-Enable analysis based on historical dates for backtesting and performance evaluation. This is essential for validating the system's effectiveness before relying on its recommendations.
+Enable analysis based on historical dates for performance evaluation. This is essential for validating the system's effectiveness before relying on its recommendations.
 
-### 8.1 Historical Date Analysis
-
-✅ **COMPLETE** - Enables backtesting and historical analysis
-
-**Objective**: Run analysis as if it were a specific date in the past.
-
-#### Implementation Details
+### Implementation Details
 
 **1. CLI Parameter** ✅
 ```bash
@@ -599,7 +593,7 @@ uv run python -m src.main analyze --test --date 2024-06-01
 - Report generation uses historical date for report_date
 - Both rule-based and LLM analysis support historical dates
 
-#### Deliverables
+### Deliverables ✅
 - ✅ `--date` CLI parameter (YYYY-MM-DD format)
 - ✅ HistoricalDataFetcher with strict date filtering
 - ✅ HistoricalContext Pydantic model
@@ -608,69 +602,206 @@ uv run python -m src.main analyze --test --date 2024-06-01
 - ✅ Test mode support for historical dates
 - ✅ Comprehensive error handling and warnings
 
-### 8.2 Backtesting Framework
+---
 
-**Objective**: Run analysis at multiple historical points and track outcomes.
+**Phase 8 Status: ✅ COMPLETE**
+
+---
+
+## Phase 9: Historical Database & Performance Tracking
+
+### 🚨 **HIGH PRIORITY** - Essential for Long-term Analysis
+
+### Overview
+
+Implement a local file-based SQLite database for storing historical data that has limited availability from APIs (like analyst ratings which only cover current + 3 months), and for tracking recommendation performance over time.
+
+### 9.1 Historical Data Storage
+
+**Objective**: Persist time-sensitive data that APIs don't retain historically.
 
 #### Tasks
-- [ ] **Create backtesting engine**:
+- [ ] **Create SQLite database** (`data/nordinvest.db`):
+  ```sql
+  -- Analyst ratings historical storage
+  -- APIs only provide current + ~3 months, we need to accumulate over time
+  CREATE TABLE analyst_ratings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ticker TEXT NOT NULL,
+      period DATE NOT NULL,  -- First day of the month (e.g., 2025-09-01)
+      strong_buy INTEGER NOT NULL,
+      buy INTEGER NOT NULL,
+      hold INTEGER NOT NULL,
+      sell INTEGER NOT NULL,
+      strong_sell INTEGER NOT NULL,
+      total_analysts INTEGER NOT NULL,
+      data_source TEXT NOT NULL,  -- 'Finnhub', 'AlphaVantage', etc.
+      fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(ticker, period, data_source)
+  );
+
+  CREATE INDEX idx_analyst_ratings_ticker ON analyst_ratings(ticker);
+  CREATE INDEX idx_analyst_ratings_period ON analyst_ratings(period);
+  CREATE INDEX idx_analyst_ratings_ticker_period ON analyst_ratings(ticker, period);
+  ```
+
+- [ ] **Create AnalystRatingsRepository class**:
   ```python
-  class BacktestEngine:
-      def run_backtest(
+  class AnalystRatingsRepository:
+      """Repository for storing and retrieving historical analyst ratings."""
+
+      def __init__(self, db_path: Path = Path("data/nordinvest.db")):
+          self.db_path = db_path
+          self._init_db()
+
+      def store_ratings(self, ratings: AnalystData) -> None:
+          """Store analyst ratings, updating if exists."""
+
+      def get_ratings(self, ticker: str, period: date) -> AnalystData | None:
+          """Get ratings for a specific ticker and period."""
+
+      def get_ratings_history(
           self,
-          tickers: list[str],
-          start_date: date,
-          end_date: date,
-          interval: str = "weekly"
-      ) -> BacktestResult:
-          """Run analysis at each interval and track outcomes."""
+          ticker: str,
+          start_period: date,
+          end_period: date
+      ) -> list[AnalystData]:
+          """Get historical ratings for a ticker over a date range."""
+
+      def get_latest_ratings(self, ticker: str) -> AnalystData | None:
+          """Get the most recent ratings for a ticker."""
   ```
 
-- [ ] **Implement backtest CLI command**:
-  ```bash
-  uv run python -m src.main backtest \
-      --tickers AAPL,MSFT,GOOGL \
-      --start 2024-01-01 \
-      --end 2024-06-30 \
-      --interval weekly
+- [ ] **Integrate with data fetching pipeline**:
+  - Auto-store analyst ratings when fetched from API
+  - Check database first for historical dates
+  - Fall back to API for current data
+
+#### Data Model
+```python
+class AnalystData(BaseModel):
+    """Analyst ratings data with storage metadata."""
+    ticker: str
+    period: date  # First day of the month
+    strong_buy: int
+    buy: int
+    hold: int
+    sell: int
+    strong_sell: int
+    total_analysts: int
+    data_source: str
+    fetched_at: datetime | None = None
+```
+
+### 9.2 Performance Tracking Database
+
+**Objective**: Persist recommendations and track their outcomes.
+
+#### Tasks
+- [ ] **Add recommendations table**:
+  ```sql
+  CREATE TABLE recommendations (
+      id TEXT PRIMARY KEY,
+      ticker TEXT NOT NULL,
+      analysis_date DATE NOT NULL,
+      signal_type TEXT NOT NULL,  -- 'BUY', 'HOLD', 'SELL', 'AVOID'
+      score REAL NOT NULL,
+      confidence REAL NOT NULL,
+      technical_score REAL,
+      fundamental_score REAL,
+      sentiment_score REAL,
+      analysis_mode TEXT,  -- 'rule_based', 'llm', 'hybrid'
+      llm_model TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE INDEX idx_recommendations_ticker ON recommendations(ticker);
+  CREATE INDEX idx_recommendations_date ON recommendations(analysis_date);
   ```
 
-- [ ] **Track signal accuracy**:
-  - Buy signals → Did price increase?
-  - Confidence correlation with accuracy
-  - Per-agent accuracy tracking
+- [ ] **Add price tracking table**:
+  ```sql
+  CREATE TABLE price_tracking (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      recommendation_id TEXT REFERENCES recommendations(id),
+      tracking_date DATE NOT NULL,
+      days_since_recommendation INTEGER,
+      price REAL NOT NULL,
+      price_change_pct REAL,
+      benchmark_change_pct REAL,  -- vs SPY
+      UNIQUE(recommendation_id, tracking_date)
+  );
+  ```
 
-- [ ] **Generate backtest reports**:
-  - Win rate, average return
-  - Sharpe ratio, max drawdown
-  - Comparison vs benchmark (S&P 500)
+- [ ] **Add performance summary table**:
+  ```sql
+  CREATE TABLE performance_summary (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ticker TEXT,
+      signal_type TEXT,
+      analysis_mode TEXT,
+      period_days INTEGER,
+      total_recommendations INTEGER,
+      avg_return REAL,
+      win_rate REAL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(ticker, signal_type, analysis_mode, period_days)
+  );
+  ```
+
+- [ ] **Create PerformanceTracker class**
+- [ ] **Automated daily price tracking job**
+- [ ] **Performance report generation**
+
+### 9.3 CLI Commands
+
+```bash
+# Store current analyst ratings for all tracked tickers
+uv run python -m src.main store-analyst-ratings
+
+# View historical analyst ratings
+uv run python -m src.main analyst-history --ticker AAPL --months 12
+
+# Track performance of past recommendations
+uv run python -m src.main track-performance
+
+# Generate performance report
+uv run python -m src.main performance-report --period 30
+```
 
 #### Configuration
 ```yaml
-backtesting:
+database:
   enabled: true
-  default_lookback_days: 365
+  path: "data/nordinvest.db"
+
+performance_tracking:
+  enabled: true
+  tracking_periods: [7, 30, 90, 180]
   benchmark_ticker: "SPY"
-  evaluation_periods: [30, 90, 180]
+  auto_update: true
 ```
 
 #### Deliverables
-- [ ] `--date` parameter for historical analysis
-- [ ] HistoricalDataFetcher with strict date filtering
-- [ ] BacktestEngine with configurable intervals
-- [ ] `backtest` CLI command
-- [ ] Backtest report generation
+- [ ] SQLite database schema (analyst_ratings, recommendations, price_tracking, performance_summary)
+- [ ] AnalystRatingsRepository implementation
+- [ ] PerformanceTracker implementation
+- [ ] Integration with data fetching pipeline
+- [ ] `store-analyst-ratings` CLI command
+- [ ] `analyst-history` CLI command
+- [ ] `track-performance` CLI command
+- [ ] `performance-report` CLI command
 
 ---
 
-**Phase 8.1 Status: ✅ COMPLETE**
+**Phase 9 Status: PLANNED - HIGH PRIORITY**
 
 **Estimated Effort**: 4-5 days
-**Priority**: 🔴 High - Essential for system validation
+**Priority**: 🔴 High - Enables historical analysis with complete data
 
 ---
 
-## Phase 9: Per-Agent LLM Model Configuration
+## Phase 10: Per-Agent LLM Model Configuration
 
 ### Overview - Cost Optimization
 
@@ -708,7 +839,7 @@ backtesting:
         model: claude-sonnet-4-20250514  # Critical decisions
         temperature: 0.5
 
-      devils_advocate:  # Future agent (Phase 10)
+      devils_advocate:  # Future agent (Phase 11)
         model: claude-sonnet-4-20250514
         temperature: 0.8  # More creative criticism
   ```
@@ -749,20 +880,20 @@ backtesting:
 
 ---
 
-**Phase 9 Status: PLANNED**
+**Phase 10 Status: PLANNED**
 
 **Estimated Effort**: 2-3 days
 **Priority**: 🟡 High - Significant cost savings potential
 
 ---
 
-## Phase 10: Devil's Advocate Agent
+## Phase 11: Devil's Advocate Agent
 
 ### Overview
 
 Add a critical review agent that challenges BUY recommendations to reduce overconfidence and identify blind spots. This agent provides fact-based counter-arguments to ensure recommendations are robust.
 
-### 10.1 Devil's Advocate Agent Design
+### 11.1 Devil's Advocate Agent Design
 
 **Objective**: Optional agent that critically examines investment recommendations.
 
@@ -795,7 +926,7 @@ Add a critical review agent that challenges BUY recommendations to reduce overco
   - **Data Quality Issues**: Missing or stale data
   - **Confidence Calibration**: Is confidence score justified?
 
-### 10.2 Critique Implementation
+### 11.2 Critique Implementation
 
 #### Tasks
 - [ ] **Create critique prompt template**:
@@ -896,236 +1027,13 @@ agents:
 - [ ] Confidence adjustment logic
 - [ ] CLI `--with-critique` flag
 - [ ] Report integration with critique section
-
----
-
-**Phase 10 Status: PLANNED**
-
-**Estimated Effort**: 2-3 days
-**Priority**: 🟡 High - Reduces overconfidence in recommendations
-
----
-
-## Phase 11: Performance Tracking & Database
-
-**Objective**: Optional agent that critically examines investment recommendations.
-
-#### Tasks
-- [ ] **Create DevilsAdvocateAgent**:
-  ```python
-  class DevilsAdvocateAgent:
-      """
-      An agent that critically examines investment recommendations
-      and provides counter-arguments based on facts.
-      """
-
-      role = "Senior Risk Analyst & Critical Reviewer"
-      goal = "Challenge investment theses and identify potential flaws"
-      backstory = """
-          You are a contrarian analyst with 25 years of experience.
-          You've seen countless investment theses fail. Your job is to
-          find the weaknesses in any recommendation - not to be negative,
-          but to ensure recommendations are robust and well-reasoned.
-          You focus on FACTS, not speculation.
-      """
-  ```
-
-- [ ] **Define criticism categories**:
-  - **Valuation Concerns**: Is the price justified by fundamentals?
-  - **Technical Warnings**: Are there bearish signals being ignored?
-  - **Macro Risks**: Sector headwinds, economic factors
-  - **Competitive Threats**: Market share risks, disruption
-  - **Historical Patterns**: Similar setups that failed
-  - **Data Quality Issues**: Missing or stale data
-  - **Confidence Calibration**: Is confidence score justified?
-
-### 10.2 Critique Implementation
-
-#### Tasks
-- [ ] **Create critique prompt template**:
-  ```python
-  DEVILS_ADVOCATE_PROMPT = """
-  You are reviewing the following BUY recommendation:
-
-  Ticker: {ticker}
-  Score: {score}/100
-  Confidence: {confidence}%
-
-  Technical Analysis Summary:
-  {technical_summary}
-
-  Fundamental Analysis Summary:
-  {fundamental_summary}
-
-  Sentiment Analysis Summary:
-  {sentiment_summary}
-
-  Investment Thesis:
-  {investment_thesis}
-
-  YOUR TASK:
-  Critically examine this recommendation and identify:
-  1. What could go WRONG with this investment?
-  2. What facts or data CONTRADICT the bullish thesis?
-  3. What risks are being UNDERWEIGHTED?
-  4. Is the confidence score JUSTIFIED given the uncertainties?
-  5. What would make you change this from BUY to HOLD or AVOID?
-
-  Provide specific, fact-based criticisms. Do not speculate.
-  Rate the overall thesis robustness (0-100).
-
-  Output as JSON:
-  {
-      "robustness_score": int,
-      "primary_concerns": [
-          {"category": "str", "concern": "str", "severity": "high|medium|low"}
-      ],
-      "overlooked_risks": ["str"],
-      "confidence_adjustment": int,  // Suggested adjustment (-30 to +10)
-      "recommendation_change": "maintain|downgrade|upgrade",
-      "summary": "str"
-  }
-  """
-  ```
-
-- [ ] **Implement robustness scoring** (0-100)
-- [ ] **Add confidence adjustment** based on critique
-- [ ] **Flag recommendations** with low robustness scores
-
-### 10.3 Integration
-
-#### Tasks
-- [ ] **Add to analysis pipeline** (optional stage):
-  ```bash
-  # Enable devil's advocate
-  uv run python -m src.main analyze --ticker AAPL --llm --with-critique
-
-  # Always enable via config
-  ```
-
-- [ ] **Add critique section to reports**:
-  ```markdown
-  ## Critical Review (Devil's Advocate)
-
-  **Robustness Score**: 65/100
-
-  ### Primary Concerns
-  1. **Valuation** (High): P/E ratio of 35 is 40% above sector average
-  2. **Technical** (Medium): RSI showing overbought conditions
-  3. **Macro** (Medium): Rising interest rates may pressure growth stocks
-
-  ### Overlooked Risks
-  - Regulatory scrutiny in EU markets
-  - Key patent expiring in 2025
-
-  ### Confidence Adjustment
-  Original: 78% → Adjusted: 68% (-10%)
-  ```
-
-#### Configuration
-```yaml
-agents:
-  devils_advocate:
-    enabled: true
-    apply_to: ["BUY"]  # Only critique BUY signals
-    min_score_to_critique: 60  # Don't waste tokens on weak signals
-    confidence_adjustment_enabled: true
-    include_in_report: true
-```
-
-#### Deliverables
-- [ ] DevilsAdvocateAgent implementation
-- [ ] Critique prompt template
-- [ ] Robustness scoring (0-100)
-- [ ] Confidence adjustment logic
-- [ ] CLI `--with-critique` flag
-- [ ] Report integration with critique section
-
----
-
-**Phase 10 Status: PLANNED**
-
-**Estimated Effort**: 2-3 days
-**Priority**: 🟡 High - Reduces overconfidence in recommendations
-
----
-
-## Phase 11: Performance Tracking & Database
-
-### Overview
-
-Track recommendation performance over time with a local file-based database.
-
-### 9.1 Performance Database
-
-**Objective**: Persist recommendations and track their outcomes.
-
-#### Tasks
-- [ ] **Create SQLite database** (`data/performance.db`):
-  ```sql
-  CREATE TABLE recommendations (
-      id TEXT PRIMARY KEY,
-      ticker TEXT NOT NULL,
-      analysis_date DATE NOT NULL,
-      signal_type TEXT NOT NULL,
-      score REAL NOT NULL,
-      confidence REAL NOT NULL,
-      technical_score REAL,
-      fundamental_score REAL,
-      sentiment_score REAL,
-      analysis_mode TEXT,
-      llm_model TEXT,
-      created_at TIMESTAMP
-  );
-
-  CREATE TABLE price_tracking (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      recommendation_id TEXT REFERENCES recommendations(id),
-      tracking_date DATE NOT NULL,
-      days_since_recommendation INTEGER,
-      price REAL NOT NULL,
-      price_change_pct REAL,
-      benchmark_change_pct REAL
-  );
-
-  CREATE TABLE performance_summary (
-      ticker TEXT,
-      signal_type TEXT,
-      analysis_mode TEXT,
-      period_days INTEGER,
-      total_recommendations INTEGER,
-      avg_return REAL,
-      win_rate REAL,
-      updated_at TIMESTAMP
-  );
-  ```
-
-- [ ] **Create PerformanceTracker class**
-- [ ] **Automated daily price tracking job**
-- [ ] **Performance report generation**
-
-#### Configuration
-```yaml
-performance_tracking:
-  enabled: true
-  database_path: "data/performance.db"
-  tracking_periods: [7, 30, 90, 180]
-  benchmark_ticker: "SPY"
-  auto_update: true
-```
-
-#### Deliverables
-- [ ] SQLite database schema
-- [ ] PerformanceTracker implementation
-- [ ] `track-performance` CLI command
-- [ ] `performance-report` CLI command
 
 ---
 
 **Phase 11 Status: PLANNED**
 
-**Estimated Effort**: 3-4 days
-**Priority**: 🟡 High - Enables measuring system effectiveness
+**Estimated Effort**: 2-3 days
+**Priority**: 🟡 High - Reduces overconfidence in recommendations
 
 ---
 
@@ -1135,20 +1043,20 @@ performance_tracking:
 
 Expand technical analysis with advanced indicators and candlestick patterns.
 
-### 10.1 Additional Indicators
+### 12.1 Additional Indicators
 
 - [ ] **Momentum**: Stochastic, Williams %R, CCI, ROC, MFI
 - [ ] **Trend**: ADX, Parabolic SAR, Ichimoku Cloud, SuperTrend
 - [ ] **Volatility**: Bollinger Bands, Keltner Channels, Donchian
 - [ ] **Volume**: OBV, A/D Line, CMF, VWAP
 
-### 10.2 Candlestick Patterns
+### 12.2 Candlestick Patterns
 
 - [ ] **Reversal**: Hammer, Engulfing, Morning/Evening Star, Doji
 - [ ] **Continuation**: Three Methods, Marubozu
 - [ ] **Chart Patterns**: Head & Shoulders, Double Top/Bottom, Triangles
 
-### 10.3 Integration
+### 12.3 Integration
 
 - [ ] Pattern strength scoring
 - [ ] Context analysis
@@ -1216,6 +1124,139 @@ Additional advanced features for power users and system integration.
 
 ---
 
+## Phase 14: Backtesting Framework
+
+### Overview
+
+Run analysis at multiple historical points and track outcomes to validate system effectiveness before relying on recommendations.
+
+### 14.1 Backtesting Engine
+
+**Objective**: Automate historical analysis across date ranges.
+
+#### Tasks
+- [ ] **Create backtesting engine**:
+  ```python
+  class BacktestEngine:
+      def run_backtest(
+          self,
+          tickers: list[str],
+          start_date: date,
+          end_date: date,
+          interval: str = "weekly"
+      ) -> BacktestResult:
+          """Run analysis at each interval and track outcomes."""
+
+      def _generate_analysis_dates(
+          self,
+          start_date: date,
+          end_date: date,
+          interval: str
+      ) -> list[date]:
+          """Generate dates for analysis based on interval."""
+  ```
+
+- [ ] **Implement backtest CLI command**:
+  ```bash
+  uv run python -m src.main backtest \
+      --tickers AAPL,MSFT,GOOGL \
+      --start 2024-01-01 \
+      --end 2024-06-30 \
+      --interval weekly
+
+  # With LLM analysis (higher cost)
+  uv run python -m src.main backtest \
+      --tickers AAPL \
+      --start 2024-01-01 \
+      --end 2024-03-31 \
+      --interval monthly \
+      --llm
+  ```
+
+### 14.2 Signal Accuracy Tracking
+
+#### Tasks
+- [ ] **Track signal outcomes**:
+  - Buy signals → Did price increase after N days?
+  - Confidence correlation with accuracy
+  - Per-agent accuracy tracking
+  - Signal strength vs outcome correlation
+
+- [ ] **Implement accuracy metrics**:
+  ```python
+  class BacktestMetrics:
+      win_rate: float  # % of signals that were correct
+      avg_return: float  # Average return of recommendations
+      sharpe_ratio: float  # Risk-adjusted returns
+      max_drawdown: float  # Worst peak-to-trough decline
+      benchmark_alpha: float  # Returns vs SPY
+      confidence_accuracy: dict[str, float]  # Accuracy by confidence bucket
+  ```
+
+### 14.3 Backtest Reports
+
+#### Tasks
+- [ ] **Generate comprehensive reports**:
+  ```markdown
+  # Backtest Report: AAPL, MSFT, GOOGL
+  Period: 2024-01-01 to 2024-06-30
+  Interval: Weekly (26 analysis points)
+
+  ## Summary Metrics
+  | Metric | Value |
+  |--------|-------|
+  | Win Rate | 62% |
+  | Avg Return | +3.2% |
+  | Sharpe Ratio | 1.4 |
+  | Max Drawdown | -8.5% |
+  | Alpha vs SPY | +1.8% |
+
+  ## Signal Distribution
+  | Signal | Count | Win Rate | Avg Return |
+  |--------|-------|----------|------------|
+  | BUY | 45 | 68% | +4.1% |
+  | HOLD | 28 | 54% | +1.2% |
+  | SELL | 5 | 80% | -2.3% |
+
+  ## Confidence Analysis
+  | Confidence | Count | Accuracy |
+  |------------|-------|----------|
+  | High (>80%) | 12 | 75% |
+  | Medium (60-80%) | 38 | 61% |
+  | Low (<60%) | 28 | 52% |
+  ```
+
+- [ ] **Export formats**: Markdown, JSON, CSV
+
+#### Configuration
+```yaml
+backtesting:
+  enabled: true
+  default_lookback_days: 365
+  benchmark_ticker: "SPY"
+  evaluation_periods: [7, 30, 90, 180]
+  intervals: ["daily", "weekly", "monthly"]
+  max_concurrent_analyses: 5
+  cost_limit_per_backtest: 10.0  # EUR
+```
+
+#### Deliverables
+- [ ] BacktestEngine implementation
+- [ ] `backtest` CLI command
+- [ ] BacktestMetrics calculation
+- [ ] Backtest report generation (Markdown, JSON, CSV)
+- [ ] Progress tracking for long backtests
+- [ ] Cost estimation before running
+
+---
+
+**Phase 14 Status: PLANNED**
+
+**Estimated Effort**: 4-5 days
+**Priority**: 🟢 Medium - Requires Phase 8 (Historical Analysis) and Phase 9 (Database)
+
+---
+
 ## Cost Budget Breakdown
 
 | Component | Estimated Monthly Cost |
@@ -1252,7 +1293,7 @@ Additional advanced features for power users and system integration.
 
 ## Success Criteria Checklist
 
-### Completed (Phases 1-7) ✅
+### Completed (Phases 1-8) ✅
 - [x] System runs daily in <15 minutes
 - [x] Monthly costs ≤€100
 - [x] Generates signals with scores and recommendations
@@ -1267,17 +1308,20 @@ Additional advanced features for power users and system integration.
 - [x] True test mode with zero API/LLM costs
 - [x] Reproducible test results with fixtures
 - [x] MockLLMClient for offline testing
+- [x] Historical date analysis (`--date`) working
 
-### Phase 8 Targets (HIGH PRIORITY)
-- [ ] Historical date analysis (`--date`) working
-- [ ] Backtesting framework operational
-- [ ] Backtest reports with accuracy metrics
+### Phase 9 Targets (HIGH PRIORITY)
+- [ ] Historical database with analyst_ratings table
+- [ ] AnalystRatingsRepository implementation
+- [ ] Performance tracking database (recommendations, price_tracking tables)
+- [ ] CLI commands for analyst data management
 
-### Phase 9-13 Targets
+### Phase 10-14 Targets
 - [ ] Per-agent model configuration
 - [ ] Devil's Advocate agent integrated
-- [ ] Performance tracking database
-- [ ] Advanced technical indicators
+- [ ] Enhanced technical indicators
+- [ ] Advanced features (multi-timeframe, sector analysis)
+- [ ] Backtesting framework operational
 
 ---
 
@@ -1305,17 +1349,23 @@ uv run python -m src.main analyze --test --fixture test_ticker_minimal
 uv run python -m src.main analyze --ticker AAPL,MSFT
 uv run python -m src.main analyze --ticker AAPL --llm
 
-# Historical analysis (Phase 8 - HIGH PRIORITY)
+# Historical analysis (Phase 8) ✅
 uv run python -m src.main analyze --ticker AAPL --date 2024-06-01
 
-# Backtest (Phase 8 - HIGH PRIORITY)
-uv run python -m src.main backtest --tickers AAPL,MSFT --start 2024-01-01 --end 2024-06-30
+# Store analyst ratings (Phase 9 - HIGH PRIORITY)
+uv run python -m src.main store-analyst-ratings
 
-# With critique (Phase 10 - Planned)
+# View analyst history (Phase 9 - HIGH PRIORITY)
+uv run python -m src.main analyst-history --ticker AAPL --months 12
+
+# Performance report (Phase 9 - HIGH PRIORITY)
+uv run python -m src.main performance-report --period 30
+
+# With critique (Phase 11 - Planned)
 uv run python -m src.main analyze --ticker AAPL --llm --with-critique
 
-# Performance report (Phase 11 - Planned)
-uv run python -m src.main performance-report --period 30
+# Backtest (Phase 14 - Planned)
+uv run python -m src.main backtest --tickers AAPL,MSFT --start 2024-01-01 --end 2024-06-30
 
 # Help
 uv run python -m src.main --help
