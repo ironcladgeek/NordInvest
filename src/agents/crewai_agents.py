@@ -166,9 +166,15 @@ class CrewAIAgentFactory:
                 "investment theses. You weigh conflicting signals, identify consensus areas, "
                 "and provide clear recommendation rationale. "
                 "You assess confidence levels based on signal agreement and data quality. "
-                "You generate human-readable investment narratives that explain the investment case."
+                "You generate human-readable investment narratives that explain the investment case. "
+                "\n"
+                "IMPORTANT: You do NOT have access to any tools. All necessary analysis data "
+                "(technical indicators, fundamental metrics, sentiment analysis) will be provided "
+                "directly in your task description. Your job is to synthesize this pre-computed data "
+                "into a structured JSON investment signal. Do NOT attempt to fetch or calculate any data. "
+                "Focus entirely on analyzing the provided results and generating the required JSON output."
             ),
-            tools=[],  # Tools will be added separately
+            tools=[],  # No tools - synthesizer receives pre-computed results
             llm=self.llm_client,
             verbose=False,
             allow_delegation=False,
@@ -378,16 +384,32 @@ class CrewAITaskFactory:
             description=(
                 f"Synthesize all analyses for {ticker} into a structured investment signal.\n"
                 f"\n"
-                f"Technical Analysis Results:\n"
+                f"CRITICAL RULES - FOLLOW EXACTLY:\n"
+                f"✓ DO: Synthesize the analysis data provided below\n"
+                f"✓ DO: Output ONLY a JSON object (no markdown, no text before or after)\n"
+                f"✓ DO: Extract scores from the analysis results provided\n"
+                f"✓ DO: Calculate final_score = (tech_score * 0.35) + (fundamental_score * 0.35) + (sentiment_score * 0.30)\n"
+                f"✗ DO NOT: Attempt to fetch or retrieve any data\n"
+                f"✗ DO NOT: Use any tools or make any function calls\n"
+                f"✗ DO NOT: Ask for additional data\n"
+                f"✗ DO NOT: Generate explanations, markdown, or any text other than the JSON\n"
+                f"✗ DO NOT: Use <function_calls> or any code blocks\n"
+                f"\n"
+                f"ANALYSIS DATA TO SYNTHESIZE:\n"
+                f"---BEGIN TECHNICAL ANALYSIS---\n"
                 f"{technical_analysis}\n"
+                f"---END TECHNICAL ANALYSIS---\n"
                 f"\n"
-                f"Fundamental Analysis Results:\n"
+                f"---BEGIN FUNDAMENTAL ANALYSIS---\n"
                 f"{fundamental_analysis}\n"
+                f"---END FUNDAMENTAL ANALYSIS---\n"
                 f"\n"
-                f"Sentiment Analysis Results:\n"
+                f"---BEGIN SENTIMENT ANALYSIS---\n"
                 f"{sentiment_analysis}\n"
+                f"---END SENTIMENT ANALYSIS---\n"
                 f"\n"
-                f"You must output ONLY a valid JSON object (no markdown, no extra text) with this exact structure:\n"
+                f"OUTPUT SPECIFICATION:\n"
+                f"Generate ONLY a valid JSON object with this exact structure (start with '{{' and end with '}}'):\n"
                 f"{{\n"
                 f'  "ticker": "{ticker}",\n'
                 f'  "name": "Company Name",\n'

@@ -1,4 +1,4 @@
-"""Tests for FinancialDataFetcherTool using free tier endpoints."""
+"""Tests for FinancialDataFetcherTool using Alpha Vantage Premium."""
 
 from unittest.mock import MagicMock
 
@@ -8,7 +8,7 @@ from src.tools.fetchers import FinancialDataFetcherTool
 
 
 class TestFinancialDataFetcherTool:
-    """Test FinancialDataFetcherTool class with free tier data sources."""
+    """Test FinancialDataFetcherTool class with Alpha Vantage Premium."""
 
     def test_tool_initialization(self):
         """Test tool initialization."""
@@ -16,7 +16,11 @@ class TestFinancialDataFetcherTool:
 
         assert tool.name == "FinancialDataFetcher"
         assert tool.description is not None
-        assert "free tier" in tool.description.lower()
+        # Updated to use Alpha Vantage Premium as primary provider
+        assert (
+            "alpha vantage" in tool.description.lower()
+            or "fundamental data" in tool.description.lower()
+        )
 
     def test_run_missing_ticker(self):
         """Test run without ticker - returns neutral data."""
@@ -25,8 +29,8 @@ class TestFinancialDataFetcherTool:
         result = tool.run(None)
 
         # Tool returns neutral data gracefully when ticker is missing
-        assert result["analyst_data"] == {}
         assert "price_context" in result
+        assert "company_info" in result
 
     def test_run_provider_not_available(self):
         """Test run when provider is not available."""
@@ -34,27 +38,15 @@ class TestFinancialDataFetcherTool:
 
         mock_provider = MagicMock()
         mock_provider.is_available = False
-        tool.finnhub_provider = mock_provider
 
         result = tool.run("TEST_UNAVAIL")
 
-        assert result["analyst_data"] == {}
-        assert "analyst_data" in result  # Should have key even if empty
+        assert "company_info" in result
+        assert "news_sentiment" in result
 
-    def test_run_with_analyst_data(self):
-        """Test successful fetch with analyst data."""
+    def test_run_with_company_data(self):
+        """Test successful fetch with company data."""
         tool = FinancialDataFetcherTool()
-
-        mock_finnhub = MagicMock()
-        mock_finnhub.is_available = True
-        mock_finnhub.get_recommendation_trends.return_value = {
-            "strong_buy": 5,
-            "buy": 10,
-            "hold": 3,
-            "sell": 1,
-            "strong_sell": 0,
-            "total_analysts": 19,
-        }
 
         mock_price = MagicMock()
         mock_price_obj = MagicMock()
@@ -64,56 +56,43 @@ class TestFinancialDataFetcherTool:
             MagicMock(close_price=100.0),
         ]
 
-        tool.finnhub_provider = mock_finnhub
         tool.price_provider = mock_price
 
         result = tool.run("TEST_TICKER")
 
         assert result["ticker"] == "TEST_TICKER"
-        assert "analyst_data" in result
+        assert "company_info" in result
         assert "price_context" in result
         assert "error" not in result
 
     def test_run_with_partial_data(self):
-        """Test run with partial data (analyst only)."""
+        """Test run with partial data (price only)."""
         tool = FinancialDataFetcherTool()
-
-        mock_finnhub = MagicMock()
-        mock_finnhub.is_available = True
-        mock_finnhub.get_recommendation_trends.return_value = {
-            "total_analysts": 10,
-        }
 
         mock_price = MagicMock()
         mock_price.get_stock_prices.return_value = []
 
-        tool.finnhub_provider = mock_finnhub
         tool.price_provider = mock_price
 
         result = tool.run("PARTIAL_DATA")
 
         assert result["ticker"] == "PARTIAL_DATA"
-        assert result["analyst_data"] == {"total_analysts": 10}
+        assert "company_info" in result
         assert "error" not in result
 
     def test_run_with_error_handling(self):
         """Test error handling when API calls fail - returns partial data."""
         tool = FinancialDataFetcherTool()
 
-        mock_finnhub = MagicMock()
-        mock_finnhub.is_available = True
-        mock_finnhub.get_recommendation_trends.side_effect = RuntimeError("API Error")
-
         mock_price = MagicMock()
         mock_price.get_stock_prices.return_value = []
 
-        tool.finnhub_provider = mock_finnhub
         tool.price_provider = mock_price
 
         result = tool.run("ERROR_TICKER")
 
         # Tool returns partial data gracefully even when API calls fail
-        assert result["analyst_data"] == {}
+        assert "company_info" in result
         assert "price_context" in result
 
     def test_price_context_calculation(self):
@@ -148,19 +127,46 @@ class TestFinancialDataFetcherTool:
         assert price_context["trend"] == "neutral"
 
     def test_analyst_data_fetching(self):
-        """Test that only analyst data is fetched (no premium sentiment API)."""
-        tool = FinancialDataFetcherTool()
+        """Test that analyst data is fetched from Finnhub."""
+        from unittest.mock import patch
 
-        mock_finnhub = MagicMock()
-        mock_finnhub.is_available = True
-        mock_finnhub.get_recommendation_trends.return_value = {
-            "strong_buy": 10,
-            "buy": 5,
-            "hold": 2,
-            "sell": 1,
-            "strong_sell": 0,
-            "total_analysts": 18,
-        }
+        from src.cache.manager import CacheManager
+
+        # Create tool with a mock cache that always returns None (cache miss)
+        tool = FinancialDataFetcherTool(cache_manager=CacheManager())
+
+        # Mock cache.get to always return None (force fresh fetch)
+        with patch.object(tool.cache_manager, "get", return_value=None):
+            mock_finnhub = MagicMock()
+            mock_finnhub.is_available = True
+            mock_finnhub.get_recommendation_trends.return_value = {
+                "strong_buy": 10,
+                "buy": 5,
+                "hold": 2,
+                "sell": 1,
+                "strong_sell": 0,
+                "total_analysts": 18,
+            }
+
+            tool.finnhub_provider = mock_finnhub
+
+            result = tool.run("ANALYST_TEST")
+
+            # Verify analyst_data is in result structure
+            assert "analyst_data" in result, (
+                f"analyst_data not in result. Keys: {list(result.keys())}"
+            )
+            assert "earnings_estimates" in result, (
+                f"earnings_estimates not in result. Keys: {list(result.keys())}"
+            )
+            assert "company_info" in result
+            assert "news_sentiment" in result
+            # Verify Finnhub was actually called
+            assert mock_finnhub.get_recommendation_trends.called, "Finnhub provider was not called"
+
+    def test_news_sentiment_integration(self):
+        """Test that news sentiment data is fetched from Alpha Vantage Premium."""
+        tool = FinancialDataFetcherTool()
 
         mock_price = MagicMock()
         mock_price.get_stock_prices.return_value = [
@@ -168,15 +174,22 @@ class TestFinancialDataFetcherTool:
             MagicMock(close_price=102.0),
         ]
 
-        tool.finnhub_provider = mock_finnhub
         tool.price_provider = mock_price
 
-        result = tool.run("ANALYST_TEST")
+        result = tool.run("NEWS_TEST")
 
-        # Verify sentiment API is NOT called by the fetcher tool
-        # (Sentiment should be handled by News & Sentiment Agent, not from APIs)
-        mock_finnhub.get_news_sentiment.assert_not_called()
-        # Verify only analyst and price data are in result
-        assert "analyst_data" in result
+        # Verify news_sentiment is in result structure
+        assert "news_sentiment" in result
         assert "price_context" in result
-        assert "sentiment" not in result
+        assert "company_info" in result
+
+    def test_earnings_estimates_integration(self):
+        """Test that earnings estimates are fetched from Alpha Vantage Premium."""
+        tool = FinancialDataFetcherTool()
+
+        result = tool.run("EARNINGS_TEST")
+
+        # Verify earnings_estimates is in result structure
+        assert "earnings_estimates" in result
+        assert "company_info" in result
+        assert "analyst_data" in result

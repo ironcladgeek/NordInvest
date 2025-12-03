@@ -146,9 +146,6 @@ class NewsConfig(BaseModel):
     max_articles: int = Field(
         default=50, ge=1, le=200, description="Maximum number of articles to fetch per ticker"
     )
-    max_age_hours: int = Field(
-        default=168, ge=1, le=720, description="Maximum age of articles in hours (168 = 7 days)"
-    )
 
 
 class DataConfig(BaseModel):

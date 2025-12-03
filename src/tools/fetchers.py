@@ -5,6 +5,7 @@ from typing import Any
 
 from src.cache.manager import CacheManager
 from src.config import get_config
+from src.data.provider_manager import ProviderManager
 from src.data.providers import DataProviderFactory
 from src.tools.base import BaseTool
 from src.utils.logging import get_logger
@@ -75,7 +76,10 @@ class PriceFetcherTool(BaseTool):
                 start_date = end_date - timedelta(days=days_back)
 
             # Check cache first
-            cache_key = f"prices:{ticker}:{start_date.date()}:{end_date.date()}"
+            # Use consistent cache key format: prices:<ticker>:<start_date>:<end_date>
+            cache_key = (
+                f"prices:{ticker}:{start_date.strftime('%Y-%m-%d')}:{end_date.strftime('%Y-%m-%d')}"
+            )
             cached = self.cache_manager.get(cache_key)
             if cached:
                 logger.debug(f"Cache hit for {ticker} prices")
@@ -146,14 +150,12 @@ class PriceFetcherTool(BaseTool):
 
 
 class FinancialDataFetcherTool(BaseTool):
-    """Tool for fetching fundamental data using free tier endpoints only.
+    """Tool for fetching fundamental data using Alpha Vantage Premium + specialized providers.
 
-    Uses Finnhub free tier endpoints:
-    - /stock/profile2 (company info)
-    - /stock/recommendation (analyst ratings)
-    - Yahoo Finance (price data)
-
-    Note: News sentiment is analyzed by CrewAI News & Sentiment Agent (not from premium APIs)
+    Provider configuration:
+    - Alpha Vantage Premium: news sentiment + company overview + fundamentals + earnings estimates
+    - Yahoo Finance: price data
+    - Finnhub: analyst recommendations only
     """
 
     def __init__(self, cache_manager: CacheManager = None):
@@ -165,49 +167,99 @@ class FinancialDataFetcherTool(BaseTool):
         super().__init__(
             name="FinancialDataFetcher",
             description=(
-                "Fetch fundamental data using free tier APIs only. "
+                "Fetch fundamental data using Alpha Vantage Premium with specialized providers. "
                 "Input: ticker symbol. "
-                "Output: Dictionary with analyst consensus, sentiment, and price context."
+                "Output: Dictionary with company info, news sentiment, earnings estimates, analyst data, and metrics."
             ),
         )
         self.cache_manager = cache_manager or CacheManager()
+
+        # Use ProviderManager with Alpha Vantage for financial data
+        self.provider_manager = ProviderManager(
+            primary_provider="alpha_vantage",
+            backup_providers=["yahoo_finance", "finnhub"],
+        )
+
+        # Keep direct access to specialized providers
+        self.alpha_vantage_provider = DataProviderFactory.create("alpha_vantage")
         self.finnhub_provider = DataProviderFactory.create("finnhub")
         self.price_provider = DataProviderFactory.create("yahoo_finance")
 
     def run(self, ticker: str) -> dict[str, Any]:
-        """Fetch fundamental data for ticker (free tier only).
+        """Fetch fundamental data for ticker using Alpha Vantage (primary) + fallbacks.
 
         Args:
             ticker: Stock ticker symbol
 
         Returns:
-            Dictionary with analyst data, sentiment, and price context
+            Dictionary with company info, news sentiment, analyst data, and metrics
         """
         try:
             # Check cache first
-            cache_key = f"fundamental_freetier:{ticker}"
+            cache_key = f"fundamental_enriched:{ticker}"
             cached = self.cache_manager.get(cache_key)
             if cached:
                 logger.debug(f"Cache hit for {ticker} fundamental data")
                 return cached
 
-            if not self.finnhub_provider.is_available:
-                logger.warning(f"Finnhub provider not available for {ticker}")
-                # Return neutral data instead of error
-                return {
-                    "ticker": ticker,
-                    "analyst_data": {},
-                    "price_context": self._get_price_context(ticker) or {},
-                    "data_availability": "limited - Finnhub API not configured",
-                    "timestamp": datetime.now().isoformat(),
-                }
+            logger.debug(f"Fetching enriched fundamental data for {ticker}")
 
-            logger.debug(f"Fetching fundamental data for {ticker} (free tier only)")
+            # Fetch company overview (Alpha Vantage Premium)
+            company_info = None
+            try:
+                company_info = self.provider_manager.get_company_info(ticker)
+            except Exception as e:
+                logger.warning(f"Could not fetch company info for {ticker}: {e}")
 
-            # Fetch analyst recommendations (may return None if unavailable)
+            # Fetch earnings estimates (Alpha Vantage Premium)
+            earnings_estimates = None
+            try:
+                if self.alpha_vantage_provider.is_available:
+                    earnings_estimates = self.alpha_vantage_provider.get_earnings_estimates(ticker)
+            except Exception as e:
+                logger.warning(f"Could not fetch earnings estimates for {ticker}: {e}")
+
+            # Fetch news with sentiment (Alpha Vantage Premium)
+            news_articles = []
+            news_sentiment_summary = None
+            try:
+                # Fetch latest news articles - limit provides sufficient filtering
+                news_articles = self.provider_manager.get_news(ticker, limit=50)
+                # Calculate sentiment summary from articles
+                if news_articles:
+                    positive = sum(1 for a in news_articles if a.sentiment == "positive")
+                    negative = sum(1 for a in news_articles if a.sentiment == "negative")
+                    neutral = sum(1 for a in news_articles if a.sentiment == "neutral")
+                    total = len(news_articles)
+
+                    avg_sentiment = sum(
+                        a.sentiment_score for a in news_articles if a.sentiment_score is not None
+                    ) / max(1, sum(1 for a in news_articles if a.sentiment_score is not None))
+
+                    news_sentiment_summary = {
+                        "total_articles": total,
+                        "positive": positive,
+                        "negative": negative,
+                        "neutral": neutral,
+                        "positive_pct": round(100 * positive / total, 1) if total > 0 else 0,
+                        "negative_pct": round(100 * negative / total, 1) if total > 0 else 0,
+                        "avg_sentiment_score": round(avg_sentiment, 3),
+                        "overall_sentiment": (
+                            "positive"
+                            if avg_sentiment > 0.1
+                            else "negative"
+                            if avg_sentiment < -0.1
+                            else "neutral"
+                        ),
+                    }
+            except Exception as e:
+                logger.warning(f"Could not fetch news for {ticker}: {e}")
+
+            # Fetch analyst recommendations (Finnhub only)
             analyst_data = None
             try:
-                analyst_data = self.finnhub_provider.get_recommendation_trends(ticker)
+                if self.finnhub_provider.is_available:
+                    analyst_data = self.finnhub_provider.get_recommendation_trends(ticker)
             except Exception as e:
                 logger.warning(f"Could not fetch analyst data for {ticker}: {e}")
 
@@ -219,6 +271,12 @@ class FinancialDataFetcherTool(BaseTool):
 
             # Determine data availability
             available_sources = []
+            if company_info:
+                available_sources.append("company_overview")
+            if news_sentiment_summary:
+                available_sources.append("news_sentiment")
+            if earnings_estimates:
+                available_sources.append("earnings_estimates")
             if analyst_data:
                 available_sources.append("analyst_consensus")
             if price_context and price_context.get("change_percent") is not None:
@@ -226,27 +284,58 @@ class FinancialDataFetcherTool(BaseTool):
             if metrics and any(v for v in metrics.values() if v and isinstance(v, dict) and v):
                 available_sources.append("yfinance_metrics")
 
-            # Note: Sentiment is calculated by CrewAI News & Sentiment Agent, not from premium APIs
+            # Add data_source attribution to each section
+            company_info_with_source = company_info or {}
+            if company_info_with_source:
+                company_info_with_source["data_source"] = "Alpha Vantage"
+
+            news_sentiment_with_source = news_sentiment_summary or {}
+            if news_sentiment_with_source:
+                news_sentiment_with_source["data_source"] = "Alpha Vantage"
+
+            earnings_estimates_with_source = earnings_estimates or {}
+            if earnings_estimates_with_source:
+                earnings_estimates_with_source["data_source"] = "Alpha Vantage"
+
+            analyst_data_with_source = analyst_data or {}
+            if analyst_data_with_source:
+                analyst_data_with_source["data_source"] = "Finnhub"
+
+            price_context_with_source = price_context or {}
+            if price_context_with_source:
+                price_context_with_source["data_source"] = "Yahoo Finance"
+
+            metrics_with_source = metrics or {}
+            if metrics_with_source:
+                metrics_with_source["data_source"] = "Yahoo Finance"
+
             result = {
                 "ticker": ticker,
-                "analyst_data": analyst_data or {},
-                "price_context": price_context or {},
-                "metrics": metrics or {},
+                "company_info": company_info_with_source,
+                "news_sentiment": news_sentiment_with_source,
+                "earnings_estimates": earnings_estimates_with_source,
+                "analyst_data": analyst_data_with_source,
+                "price_context": price_context_with_source,
+                "metrics": metrics_with_source,
                 "data_availability": (
                     ", ".join(available_sources) if available_sources else "limited"
                 ),
                 "timestamp": datetime.now().isoformat(),
+                "data_sources": "Alpha Vantage Premium (financial + earnings) + Finnhub (analysts) + Yahoo Finance (prices)",
             }
 
-            # Cache even partial data (longer TTL for financial metrics)
+            # Cache enriched data (24 hour TTL)
             self.cache_manager.set(cache_key, result, ttl_hours=24)
 
             return result
 
         except Exception as e:
-            logger.debug(f"Error fetching fundamental data for {ticker}: {e}")
+            logger.error(f"Error fetching fundamental data for {ticker}: {e}")
             return {
                 "ticker": ticker,
+                "company_info": {},
+                "news_sentiment": {},
+                "earnings_estimates": {},
                 "analyst_data": {},
                 "price_context": {},
                 "metrics": {},
@@ -378,7 +467,7 @@ class FinancialDataFetcherTool(BaseTool):
 
 
 class NewsFetcherTool(BaseTool):
-    """Tool for fetching news articles."""
+    """Tool for fetching news articles with sentiment using Alpha Vantage primary."""
 
     def __init__(self, cache_manager: CacheManager = None):
         """Initialize news fetcher.
@@ -389,60 +478,94 @@ class NewsFetcherTool(BaseTool):
         super().__init__(
             name="NewsFetcher",
             description=(
-                "Fetch and filter relevant news articles. "
-                "Input: ticker symbol and optional time window. "
-                "Output: List of news articles with metadata."
+                "Fetch recent news articles with sentiment analysis using Alpha Vantage. "
+                "Input: ticker symbol. "
+                "Output: List of news articles with sentiment scores and topics."
             ),
         )
         self.cache_manager = cache_manager or CacheManager()
-        self.provider = DataProviderFactory.create("finnhub")
+
+        # Use Alpha Vantage Premium for news sentiment
+        self.provider_manager = ProviderManager(
+            primary_provider="alpha_vantage",
+            backup_providers=[],  # No backup for news - Alpha Vantage Premium only
+        )
 
     def run(
         self,
         ticker: str,
         limit: int = None,
-        max_age_hours: int = None,
     ) -> dict[str, Any]:
-        """Fetch news for ticker.
+        """Fetch news articles with sentiment for ticker.
 
         Args:
             ticker: Stock ticker symbol
-            limit: Maximum number of articles (default: from config)
-            max_age_hours: Maximum age of articles in hours (default: from config)
+            limit: Maximum number of articles (if None, use config default)
 
         Returns:
-            Dictionary with articles and metadata
+            Dictionary with articles and sentiment summary
         """
         try:
             # Use config defaults if not specified
             if limit is None:
                 limit = get_config().data.news.max_articles
-            if max_age_hours is None:
-                max_age_hours = get_config().data.news.max_age_hours
 
-            cache_key = f"news:{ticker}:{limit}:{max_age_hours}"
+            # Check cache first - use date-based key for consistent daily caching
+            cache_key = f"news_sentiment:{ticker}"
             cached = self.cache_manager.get(cache_key)
             if cached:
                 logger.debug(f"Cache hit for {ticker} news")
                 return cached
 
-            if not self.provider.is_available:
+            # Fetch news using Alpha Vantage Premium
+            logger.debug(f"Fetching news with sentiment for {ticker}")
+            articles = self.provider_manager.get_news(ticker, limit)
+
+            if not articles:
                 return {
                     "ticker": ticker,
                     "articles": [],
                     "count": 0,
-                    "error": "Finnhub provider not available",
+                    "sentiment_summary": None,
                 }
 
-            logger.debug(f"Fetching news for {ticker}")
-            articles = self.provider.get_news(ticker, limit=limit, max_age_hours=max_age_hours)
+            # Calculate sentiment summary
+            positive = sum(1 for a in articles if a.sentiment == "positive")
+            negative = sum(1 for a in articles if a.sentiment == "negative")
+            neutral = sum(1 for a in articles if a.sentiment == "neutral")
+            total = len(articles)
+
+            sentiment_scores = [
+                a.sentiment_score for a in articles if a.sentiment_score is not None
+            ]
+            avg_sentiment = sum(sentiment_scores) / len(sentiment_scores) if sentiment_scores else 0
+
+            sentiment_summary = {
+                "total": total,
+                "positive": positive,
+                "negative": negative,
+                "neutral": neutral,
+                "positive_pct": round(100 * positive / total, 1) if total > 0 else 0,
+                "negative_pct": round(100 * negative / total, 1) if total > 0 else 0,
+                "avg_sentiment_score": round(avg_sentiment, 3),
+                "overall_sentiment": (
+                    "positive"
+                    if avg_sentiment > 0.1
+                    else "negative"
+                    if avg_sentiment < -0.1
+                    else "neutral"
+                ),
+            }
 
             result = {
                 "ticker": ticker,
                 "articles": [a.model_dump() for a in articles],
                 "count": len(articles),
+                "sentiment_summary": sentiment_summary,
                 "timestamp": datetime.now().isoformat(),
             }
+
+            # Cache news for 4 hours
             self.cache_manager.set(cache_key, result, ttl_hours=4)
 
             return result
