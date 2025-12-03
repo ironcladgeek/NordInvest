@@ -291,7 +291,9 @@ class LLMAnalysisOrchestrator:
         if not synthesizer_agent:
             # Create if not present
             crew_agent = self.agent_factory.create_signal_synthesizer_agent()
-            crew_agent.tools = self.tool_adapter.get_crewai_tools()
+            # CRITICAL: Ensure synthesizer has absolutely NO tools
+            # It must work only with provided data to avoid tool hallucination
+            crew_agent.tools = []
             synthesizer_hybrid = HybridAnalysisAgent(
                 crewai_agent=crew_agent,
                 fallback_agent=None,
@@ -301,6 +303,8 @@ class LLMAnalysisOrchestrator:
             self.hybrid_agents["synthesizer"] = synthesizer_hybrid
         else:
             synthesizer_hybrid = synthesizer_agent
+            # IMPORTANT: Ensure cached synthesizer also has no tools
+            synthesizer_hybrid.crewai_agent.tools = []
 
         synthesis_task = self.task_factory.create_signal_synthesis_task(
             synthesizer_hybrid.crewai_agent,
