@@ -55,7 +55,7 @@ uv run python -m src.main analyze --ticker INTU --llm
 
 # Analyze market/category
 uv run python -m src.main analyze --market us --limit 20
-uv run python -m src.main analyze --category us_tech_software
+uv run python -m src.main analyze --group us_tech_software
 ```
 
 ### Project Configuration

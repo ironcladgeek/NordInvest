@@ -9,7 +9,7 @@ flowchart TB
     subgraph CLI["📟 CLI Entry Point"]
         direction TB
         CMD["uv run python -m src.main analyze"]
-        ARGS["Arguments Parser<br/>--ticker, --market, --category<br/>--llm, --limit, --config"]
+        ARGS["Arguments Parser<br/>--ticker, --market, --group<br/>--llm, --limit, --config"]
     end
 
     subgraph INIT["⚙️ Initialization"]

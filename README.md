@@ -94,8 +94,8 @@ uv run python -m src.main analyze --market global
 uv run python -m src.main analyze --ticker AAPL,MSFT,GOOGL
 
 # Analyze by category
-uv run python -m src.main analyze --category us_tech_software
-uv run python -m src.main analyze --category us_ai_ml,us_cybersecurity --limit 30
+uv run python -m src.main analyze --group us_tech_software
+uv run python -m src.main analyze --group us_ai_ml,us_cybersecurity --limit 30
 ```
 
 #### LLM-Powered Analysis 🤖
