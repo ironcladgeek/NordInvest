@@ -40,6 +40,7 @@ def _scan_market_for_anomalies(
     pipeline: "AnalysisPipeline",
     typer_instance,
     force_full_analysis: bool = False,
+    historical_date=None,
 ) -> list[str]:
     """Scan market for anomalies using rule-based market scanner.
 
@@ -51,6 +52,7 @@ def _scan_market_for_anomalies(
         pipeline: Analysis pipeline with market scanner
         typer_instance: Typer instance for output
         force_full_analysis: If True, analyze all tickers when no anomalies found
+        historical_date: Optional date for historical analysis
 
     Returns:
         List of flagged tickers with anomalies
@@ -62,6 +64,8 @@ def _scan_market_for_anomalies(
     try:
         typer_instance.echo("🔍 Stage 1: Scanning market for anomalies...")
         context = {"tickers": tickers}
+        if historical_date:
+            context["analysis_date"] = historical_date
 
         # Run market scan
         scan_result = pipeline.crew.market_scanner.execute("Scan market for anomalies", context)
@@ -805,7 +809,7 @@ def analyze(
             # Stage 1: Market scan to identify anomalies
             try:
                 filtered_ticker_list = _scan_market_for_anomalies(
-                    ticker_list, pipeline, typer, force_full_analysis
+                    ticker_list, pipeline, typer, force_full_analysis, historical_date
                 )
                 # If force_full_analysis is False and we got here, anomalies were found
                 # If force_full_analysis is True and no filtering happened, flag was used
