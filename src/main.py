@@ -757,7 +757,10 @@ def analyze(
             # Get the primary data provider
             provider_manager = ProviderManager()
             primary_provider = provider_manager.primary_provider
-            historical_fetcher = HistoricalDataFetcher(primary_provider)
+            # Pass cache_manager to enable historical cache retrieval
+            historical_fetcher = HistoricalDataFetcher(
+                primary_provider, cache_manager=cache_manager
+            )
 
             # Fetch historical context for each ticker
             typer.echo(f"  Fetching historical data as of {historical_date}...")

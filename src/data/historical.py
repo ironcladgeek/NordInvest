@@ -6,7 +6,9 @@ future data leakage.
 """
 
 from datetime import datetime, timedelta
+from typing import Optional
 
+from src.cache.manager import CacheManager
 from src.data.models import HistoricalContext
 from src.data.providers import DataProvider
 from src.utils.logging import get_logger
@@ -19,15 +21,18 @@ class HistoricalDataFetcher:
 
     This fetcher ensures that only data available up to a specific date
     is returned, preventing look-ahead bias in backtesting.
+    Optionally uses CacheManager to retrieve historical cached data.
     """
 
-    def __init__(self, provider: DataProvider):
+    def __init__(self, provider: DataProvider, cache_manager: Optional[CacheManager] = None):
         """Initialize historical data fetcher.
 
         Args:
             provider: DataProvider instance for fetching data
+            cache_manager: Optional CacheManager for retrieving historical cached data
         """
         self.provider = provider
+        self.cache_manager = cache_manager
 
     def fetch_as_of_date(
         self,
@@ -80,8 +85,30 @@ class HistoricalDataFetcher:
         logger.debug(f"Fetching price data from {start_date} to {as_of_datetime}")
 
         try:
-            # Fetch price data with strict date filtering
-            all_prices = self.provider.get_stock_prices(ticker, start_date, as_of_datetime)
+            # Try to get historical cached data first (if cache manager available)
+            all_prices = None
+            if self.cache_manager:
+                cached_data = self.cache_manager.get_historical_cache(
+                    ticker, as_of_date_only.strftime("%Y-%m-%d")
+                )
+                if cached_data and "prices" in cached_data:
+                    logger.debug(
+                        f"Using historical cached price data for {ticker} as of {as_of_date_only}"
+                    )
+                    # Convert cached price dicts back to StockPrice objects if needed
+                    all_prices = cached_data["prices"]
+                    if all_prices and isinstance(all_prices[0], dict):
+                        # Need to convert dicts to StockPrice objects
+                        from src.data.models import StockPrice
+
+                        all_prices = [
+                            StockPrice(**price) if isinstance(price, dict) else price
+                            for price in all_prices
+                        ]
+
+            # If no historical cache, fetch from provider
+            if all_prices is None:
+                all_prices = self.provider.get_stock_prices(ticker, start_date, as_of_datetime)
 
             # Filter to only include data up to as_of_date (no future data)
             filtered_prices = [
