@@ -119,6 +119,7 @@ def _run_llm_analysis(
     debug_llm: bool = False,
     is_filtered: bool = False,
     cache_manager=None,
+    historical_date=None,
 ) -> tuple[list[InvestmentSignal], None]:
     """Run analysis using LLM-powered orchestrator.
 
@@ -128,6 +129,8 @@ def _run_llm_analysis(
         typer_instance: Typer instance for output
         debug_llm: Enable LLM debug mode (save inputs/outputs)
         is_filtered: Whether tickers have been pre-filtered by market scan
+        cache_manager: Cache manager instance
+        historical_date: Optional date for historical analysis
 
     Returns:
         Tuple of (signals, portfolio_manager)
@@ -160,6 +163,20 @@ def _run_llm_analysis(
             debug_dir=debug_dir,
             progress_callback=progress_callback,
         )
+
+        # Set historical date on all tools if provided
+        if historical_date:
+            typer_instance.echo(f"  Setting historical date {historical_date} on analysis tools...")
+            # Access the tool adapter's tool instances
+            if hasattr(orchestrator, "tool_adapter"):
+                if hasattr(orchestrator.tool_adapter, "price_fetcher"):
+                    orchestrator.tool_adapter.price_fetcher.set_historical_date(historical_date)
+                if hasattr(orchestrator.tool_adapter, "fundamental_fetcher"):
+                    orchestrator.tool_adapter.fundamental_fetcher.set_historical_date(
+                        historical_date
+                    )
+                if hasattr(orchestrator.tool_adapter, "news_fetcher"):
+                    orchestrator.tool_adapter.news_fetcher.set_historical_date(historical_date)
 
         typer_instance.echo(f"  LLM Provider: {config_obj.llm.provider}")
         typer_instance.echo(f"  Model: {config_obj.llm.model}")
@@ -821,6 +838,7 @@ def analyze(
                 debug_llm,
                 is_filtered=True,
                 cache_manager=cache_manager,
+                historical_date=historical_date,
             )
             analysis_mode = "llm"
         else:
