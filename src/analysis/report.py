@@ -359,7 +359,9 @@ class ReportGenerator:
             f"| **Final Score** | {signal.final_score}/100 |\n",
             f"| **Price** | {currency_symbol}{signal.current_price:.2f} |\n",
             f"| **Time Horizon** | {signal.time_horizon} |\n",
-            f"| **Expected Return** | {signal.expected_return_min:.1f}% - {signal.expected_return_max:.1f}% |\n\n",
+            f"| **Expected Return** | {signal.expected_return_min:.1f}% - {signal.expected_return_max:.1f}% |\n",
+            f"| **Risk Level** | {signal.risk.level.value} |\n",
+            f"| **Volatility** | {signal.risk.volatility} |\n\n",
             "**Component Scores:**\n",
             f"- Technical: {signal.scores.technical}/100\n",
             f"- Fundamental: {signal.scores.fundamental}/100\n",
@@ -369,9 +371,6 @@ class ReportGenerator:
 
         for reason in signal.key_reasons:
             lines.append(f"- {reason}\n")
-
-        lines.append(f"\n**Risk Level:** {signal.risk.level.value}\n")
-        lines.append(f"**Volatility:** {signal.risk.volatility}\n")
 
         if signal.risk.flags:
             lines.append("\n**Risk Flags:**\n")
