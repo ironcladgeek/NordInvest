@@ -13,6 +13,10 @@ Usage:
     # Get US tickers by category
     tech_tickers = get_us_tickers_by_category("tech")
     small_cap = get_us_tickers_by_category("small_cap")
+
+    # Get diversified portfolio tickers
+    conservative_portfolio = get_us_tickers_by_category("us_portfolio_balanced_conservative")
+    dividend_growers = get_us_tickers_by_category("us_portfolio_dividend_growth")
 """
 
 # =============================================================================
@@ -1471,6 +1475,720 @@ US_ETFS_DIVIDEND = [
     "IDV",  # iShares International Select Dividend
 ]
 
+# =============================================================================
+# DIVERSIFIED PORTFOLIO CATEGORIES
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# BALANCED PORTFOLIOS
+# -----------------------------------------------------------------------------
+
+US_PORTFOLIO_BALANCED_CONSERVATIVE = [
+    # A conservative balanced portfolio: 40% equities, 60% bonds mindset
+    # Focus on dividend-paying blue chips, utilities, and defensive stocks
+    # Equities - Mega Cap Dividend Aristocrats
+    "JNJ",  # Healthcare - Johnson & Johnson
+    "PG",  # Consumer Staples - Procter & Gamble
+    "KO",  # Consumer Staples - Coca-Cola
+    "PEP",  # Consumer Staples - PepsiCo
+    "WMT",  # Consumer Staples - Walmart
+    "MCD",  # Consumer Discretionary - McDonald's
+    "VZ",  # Telecom - Verizon
+    "T",  # Telecom - AT&T
+    # Utilities
+    "NEE",  # Utilities - NextEra Energy
+    "DUK",  # Utilities - Duke Energy
+    "SO",  # Utilities - Southern Company
+    "D",  # Utilities - Dominion Energy
+    # REITs
+    "O",  # REIT - Realty Income (Monthly Dividend)
+    "VNQ",  # REIT ETF - Vanguard Real Estate
+    # Bonds / Fixed Income ETFs
+    "BND",  # Total Bond Market ETF
+    "AGG",  # Aggregate Bond ETF
+    "TLT",  # 20+ Year Treasury
+    "VCIT",  # Intermediate Corporate Bond
+    "LQD",  # Investment Grade Corporate
+    "SCHD",  # Dividend Equity ETF
+]
+
+US_PORTFOLIO_BALANCED_MODERATE = [
+    # Moderate balanced: 60% equities, 40% bonds mindset
+    # Mix of growth and value with some income
+    # Large Cap Core
+    "AAPL",  # Tech - Apple
+    "MSFT",  # Tech - Microsoft
+    "GOOGL",  # Tech - Alphabet
+    "JPM",  # Financials - JPMorgan
+    "V",  # Financials - Visa
+    "UNH",  # Healthcare - UnitedHealth
+    "HD",  # Consumer - Home Depot
+    "PG",  # Consumer Staples - P&G
+    # Mid Cap Growth
+    "DDOG",  # Tech - Datadog
+    "CRWD",  # Cybersecurity - CrowdStrike
+    # Dividend Payers
+    "COST",  # Consumer - Costco
+    "ABBV",  # Healthcare - AbbVie
+    "MO",  # Consumer - Altria (High Yield)
+    # International Exposure
+    "VEA",  # Developed Markets ETF
+    "VWO",  # Emerging Markets ETF
+    # Fixed Income
+    "BND",  # Total Bond
+    "VCIT",  # Corporate Bonds
+    "TIP",  # TIPS
+    # Broad Market
+    "VOO",  # S&P 500 ETF
+    "VTV",  # Value ETF
+]
+
+US_PORTFOLIO_BALANCED_AGGRESSIVE = [
+    # Aggressive balanced: 80% equities, 20% alternatives
+    # Higher risk tolerance, long-term growth focus
+    # Tech Leaders
+    "AAPL",  # Apple
+    "MSFT",  # Microsoft
+    "GOOGL",  # Alphabet
+    "AMZN",  # Amazon
+    "NVDA",  # NVIDIA
+    "META",  # Meta
+    # High Growth Tech
+    "TSLA",  # Tesla
+    "CRWD",  # CrowdStrike
+    "SNOW",  # Snowflake
+    "DDOG",  # Datadog
+    "NET",  # Cloudflare
+    # Financials Growth
+    "SQ",  # Block
+    "COIN",  # Coinbase
+    # Healthcare Innovation
+    "LLY",  # Eli Lilly (GLP-1)
+    "ISRG",  # Intuitive Surgical
+    "MRNA",  # Moderna
+    # Consumer Growth
+    "ABNB",  # Airbnb
+    "UBER",  # Uber
+    # Small/Mid Cap Growth
+    "PLTR",  # Palantir
+    "SOFI",  # SoFi
+    # Growth ETFs
+    "QQQ",  # Nasdaq 100
+    "VUG",  # Vanguard Growth
+    "ARKK",  # ARK Innovation
+]
+
+# -----------------------------------------------------------------------------
+# INCOME-FOCUSED PORTFOLIOS
+# -----------------------------------------------------------------------------
+
+US_PORTFOLIO_DIVIDEND_ARISTOCRATS = [
+    # S&P 500 Dividend Aristocrats - 25+ years of dividend increases
+    "JNJ",  # Healthcare
+    "PG",  # Consumer Staples
+    "KO",  # Beverages
+    "PEP",  # Beverages
+    "MMM",  # Industrials
+    "ABT",  # Healthcare
+    "ABBV",  # Healthcare
+    "MCD",  # Restaurants
+    "WMT",  # Retail
+    "TGT",  # Retail
+    "LOW",  # Retail
+    "CL",  # Consumer Staples
+    "CLX",  # Consumer Staples
+    "GD",  # Defense
+    "ITW",  # Industrials
+    "EMR",  # Industrials
+    "APD",  # Materials
+    "SHW",  # Materials
+    "ED",  # Utilities
+    "ATO",  # Utilities
+]
+
+US_PORTFOLIO_HIGH_YIELD_INCOME = [
+    # High dividend yield focus (5%+ yields)
+    # REITs
+    "O",  # Realty Income - 5%+
+    "AGNC",  # AGNC Investment - 14%+
+    "NLY",  # Annaly Capital - 13%+
+    "STWD",  # Starwood Property - 9%+
+    "ARCC",  # Ares Capital - 9%+
+    "MAIN",  # Main Street Capital - 6%+
+    # MLPs/Energy
+    "ET",  # Energy Transfer - 8%+
+    "EPD",  # Enterprise Products - 7%+
+    "MPLX",  # MPLX LP - 8%+
+    # Telecom
+    "VZ",  # Verizon - 6%+
+    "T",  # AT&T - 6%+
+    # Tobacco
+    "MO",  # Altria - 8%+
+    "BTI",  # British American Tobacco - 9%+
+    # BDCs
+    "HTGC",  # Hercules Capital - 10%+
+    "TPVG",  # TriplePoint Venture - 12%+
+    # High Yield ETFs
+    "JEPI",  # JPMorgan Equity Premium Income
+    "JEPQ",  # JPMorgan Nasdaq Equity Premium
+    "RYLD",  # Global X Russell 2000 Covered Call
+    "QYLD",  # Global X Nasdaq 100 Covered Call
+    "SDIV",  # Global X SuperDividend
+]
+
+US_PORTFOLIO_DIVIDEND_GROWTH = [
+    # Companies with strong dividend growth rates (10%+ CAGR)
+    "AVGO",  # Broadcom - 15%+ growth
+    "MSFT",  # Microsoft - 10%+ growth
+    "V",  # Visa - 15%+ growth
+    "MA",  # Mastercard - 15%+ growth
+    "HD",  # Home Depot - 15%+ growth
+    "LOW",  # Lowe's - 20%+ growth
+    "COST",  # Costco - 12%+ growth
+    "UNH",  # UnitedHealth - 15%+ growth
+    "TMO",  # Thermo Fisher - 15%+ growth
+    "AAPL",  # Apple - 8%+ growth
+    "TXN",  # Texas Instruments - 20%+ growth
+    "QCOM",  # Qualcomm - 10%+ growth
+    "LMT",  # Lockheed Martin - 8%+ growth
+    "CAT",  # Caterpillar - 10%+ growth
+    "SBUX",  # Starbucks - 10%+ growth
+    "NKE",  # Nike - 10%+ growth
+    "ADP",  # ADP - 12%+ growth
+    "ACN",  # Accenture - 10%+ growth
+    "SPGI",  # S&P Global - 10%+ growth
+    "AMT",  # American Tower - 15%+ growth
+]
+
+# -----------------------------------------------------------------------------
+# GROWTH PORTFOLIOS
+# -----------------------------------------------------------------------------
+
+US_PORTFOLIO_TECH_GROWTH = [
+    # Pure technology growth portfolio
+    # Mega Cap Tech
+    "AAPL",  # Apple
+    "MSFT",  # Microsoft
+    "GOOGL",  # Alphabet
+    "AMZN",  # Amazon
+    "NVDA",  # NVIDIA
+    "META",  # Meta
+    # Cloud & SaaS
+    "CRM",  # Salesforce
+    "NOW",  # ServiceNow
+    "SNOW",  # Snowflake
+    "DDOG",  # Datadog
+    "MDB",  # MongoDB
+    "CRWD",  # CrowdStrike
+    "ZS",  # Zscaler
+    "NET",  # Cloudflare
+    # Semiconductors
+    "AMD",  # AMD
+    "AVGO",  # Broadcom
+    "QCOM",  # Qualcomm
+    "MRVL",  # Marvell
+    "AMAT",  # Applied Materials
+    "LRCX",  # Lam Research
+]
+
+US_PORTFOLIO_NEXT_GEN_TECH = [
+    # Emerging technology themes - AI, quantum, robotics
+    # AI Leaders
+    "NVDA",  # NVIDIA - AI chips
+    "MSFT",  # Microsoft - OpenAI partner
+    "GOOGL",  # Google - AI research
+    "META",  # Meta - AI models
+    "AMD",  # AMD - AI accelerators
+    "PLTR",  # Palantir - AI analytics
+    "AI",  # C3.ai
+    "SOUN",  # SoundHound AI
+    "PATH",  # UiPath - RPA
+    # Quantum Computing
+    "IONQ",  # IonQ
+    "RGTI",  # Rigetti Computing
+    "IBM",  # IBM Quantum
+    # Robotics & Automation
+    "ISRG",  # Intuitive Surgical
+    "ROK",  # Rockwell Automation
+    "TER",  # Teradyne
+    "ZBRA",  # Zebra Technologies
+    # Edge Computing
+    "ANET",  # Arista Networks
+    "SMCI",  # Super Micro Computer
+    # ETFs
+    "BOTZ",  # Global X Robotics & AI
+    "ROBO",  # ROBO Global Robotics
+]
+
+US_PORTFOLIO_DISRUPTIVE_INNOVATION = [
+    # ARK-style disruptive innovation across sectors
+    # Fintech Disruption
+    "SQ",  # Block
+    "COIN",  # Coinbase
+    "AFRM",  # Affirm
+    "SOFI",  # SoFi
+    "HOOD",  # Robinhood
+    # Healthcare Disruption
+    "TDOC",  # Teladoc
+    "DXCM",  # DexCom
+    "ILMN",  # Illumina
+    "CRSP",  # CRISPR Therapeutics
+    "BEAM",  # Beam Therapeutics
+    # EV & Autonomous
+    "TSLA",  # Tesla
+    "RIVN",  # Rivian
+    "LCID",  # Lucid
+    "LAZR",  # Luminar Technologies
+    # Space & Aerospace
+    "RKLB",  # Rocket Lab
+    "SPCE",  # Virgin Galactic
+    "JOBY",  # Joby Aviation
+    # 3D Printing
+    "DDD",  # 3D Systems
+    "SSYS",  # Stratasys
+    # Disruptive ETF
+    "ARKK",  # ARK Innovation
+]
+
+# -----------------------------------------------------------------------------
+# VALUE PORTFOLIOS
+# -----------------------------------------------------------------------------
+
+US_PORTFOLIO_DEEP_VALUE = [
+    # Classic value investing - low P/E, high book value
+    # Financials (traditionally value)
+    "BRK-B",  # Berkshire Hathaway
+    "WFC",  # Wells Fargo
+    "C",  # Citigroup
+    "BAC",  # Bank of America
+    "USB",  # US Bancorp
+    # Energy (cyclical value)
+    "XOM",  # Exxon Mobil
+    "CVX",  # Chevron
+    "COP",  # ConocoPhillips
+    "SLB",  # Schlumberger
+    "HAL",  # Halliburton
+    # Industrials
+    "GE",  # GE Aerospace
+    "MMM",  # 3M
+    "CAT",  # Caterpillar
+    "DE",  # Deere
+    # Healthcare Value
+    "PFE",  # Pfizer
+    "BMY",  # Bristol-Myers Squibb
+    "GILD",  # Gilead
+    "CVS",  # CVS Health
+    # Telecom Value
+    "VZ",  # Verizon
+    "T",  # AT&T
+    # Value ETFs
+    "VTV",  # Vanguard Value
+    "SCHV",  # Schwab US Large-Cap Value
+]
+
+US_PORTFOLIO_GARP = [
+    # Growth at Reasonable Price - blend of growth and value
+    "AAPL",  # Apple - Reasonable P/E with growth
+    "MSFT",  # Microsoft - Quality at fair price
+    "GOOGL",  # Alphabet - Undervalued tech
+    "META",  # Meta - Value with AI upside
+    "V",  # Visa - Steady compounder
+    "MA",  # Mastercard - Steady compounder
+    "JPM",  # JPMorgan - Quality bank
+    "UNH",  # UnitedHealth - Healthcare compounder
+    "LLY",  # Eli Lilly - Growth pharma
+    "HD",  # Home Depot - Quality retailer
+    "COST",  # Costco - Defensive growth
+    "TXN",  # Texas Instruments - Quality semi
+    "AVGO",  # Broadcom - Value semi with growth
+    "ACN",  # Accenture - Steady IT services
+    "ADP",  # ADP - Steady business services
+    "SPGI",  # S&P Global - Moat business
+    "MCO",  # Moody's - Duopoly
+    "CME",  # CME Group - Exchange moat
+    "ICE",  # Intercontinental Exchange
+    "BLK",  # BlackRock - Asset management leader
+]
+
+US_PORTFOLIO_QUALITY_VALUE = [
+    # High-quality companies at reasonable valuations
+    "BRK-B",  # Berkshire Hathaway
+    "JNJ",  # Johnson & Johnson
+    "PG",  # Procter & Gamble
+    "KO",  # Coca-Cola
+    "PEP",  # PepsiCo
+    "WMT",  # Walmart
+    "COST",  # Costco
+    "HD",  # Home Depot
+    "TGT",  # Target
+    "MCD",  # McDonald's
+    "NKE",  # Nike
+    "UPS",  # UPS
+    "CAT",  # Caterpillar
+    "HON",  # Honeywell
+    "LMT",  # Lockheed Martin
+    "RTX",  # RTX Corporation
+    "NEE",  # NextEra Energy
+    "DUK",  # Duke Energy
+    "AMT",  # American Tower
+    "PLD",  # Prologis
+]
+
+# -----------------------------------------------------------------------------
+# SECTOR ROTATION PORTFOLIOS
+# -----------------------------------------------------------------------------
+
+US_PORTFOLIO_ECONOMIC_EXPANSION = [
+    # Cyclical stocks that outperform during economic expansion
+    # Consumer Discretionary
+    "AMZN",  # Amazon
+    "TSLA",  # Tesla
+    "HD",  # Home Depot
+    "NKE",  # Nike
+    "SBUX",  # Starbucks
+    "MCD",  # McDonald's
+    # Financials
+    "JPM",  # JPMorgan
+    "GS",  # Goldman Sachs
+    "MS",  # Morgan Stanley
+    "BLK",  # BlackRock
+    # Industrials
+    "CAT",  # Caterpillar
+    "DE",  # Deere
+    "BA",  # Boeing
+    "UNP",  # Union Pacific
+    # Materials
+    "FCX",  # Freeport-McMoRan
+    "NEM",  # Newmont
+    "NUE",  # Nucor
+    # Technology
+    "NVDA",  # NVIDIA
+    "AMD",  # AMD
+    "AVGO",  # Broadcom
+]
+
+US_PORTFOLIO_ECONOMIC_CONTRACTION = [
+    # Defensive stocks for economic slowdown
+    # Consumer Staples
+    "PG",  # Procter & Gamble
+    "KO",  # Coca-Cola
+    "PEP",  # PepsiCo
+    "WMT",  # Walmart
+    "COST",  # Costco
+    "CL",  # Colgate-Palmolive
+    # Healthcare
+    "JNJ",  # Johnson & Johnson
+    "UNH",  # UnitedHealth
+    "ABBV",  # AbbVie
+    "PFE",  # Pfizer
+    "MRK",  # Merck
+    # Utilities
+    "NEE",  # NextEra Energy
+    "DUK",  # Duke Energy
+    "SO",  # Southern Company
+    "D",  # Dominion
+    # Telecom
+    "VZ",  # Verizon
+    "T",  # AT&T
+    # Bonds/Defensive
+    "TLT",  # Long-term Treasury
+    "BND",  # Total Bond
+    "GLD",  # Gold ETF
+]
+
+US_PORTFOLIO_INFLATION_HEDGE = [
+    # Assets that tend to perform well during inflation
+    # Commodities & Materials
+    "XOM",  # Exxon - Oil
+    "CVX",  # Chevron - Oil
+    "FCX",  # Freeport - Copper
+    "NEM",  # Newmont - Gold miner
+    "GOLD",  # Barrick Gold
+    "NUE",  # Nucor - Steel
+    "CF",  # CF Industries - Fertilizer
+    "MOS",  # Mosaic - Fertilizer
+    # Real Assets
+    "PLD",  # Prologis - Logistics REIT
+    "AMT",  # American Tower - Cell tower REIT
+    "O",  # Realty Income - Triple net REIT
+    # TIPS & Real Assets
+    "TIP",  # TIPS ETF
+    "DBC",  # Commodity Index ETF
+    "GLD",  # Gold ETF
+    "SLV",  # Silver ETF
+    # Inflation Pass-through
+    "COST",  # Costco - Pricing power
+    "HD",  # Home Depot - Pricing power
+    "WMT",  # Walmart - Scale advantage
+    "BRK-B",  # Berkshire - Diversified
+]
+
+# -----------------------------------------------------------------------------
+# THEMATIC PORTFOLIOS
+# -----------------------------------------------------------------------------
+
+US_PORTFOLIO_AGING_POPULATION = [
+    # Companies benefiting from demographic aging trends
+    # Senior Healthcare
+    "UNH",  # UnitedHealth
+    "HCA",  # HCA Healthcare
+    "THC",  # Tenet Healthcare
+    "ELV",  # Elevance Health
+    "HUM",  # Humana
+    "CI",  # Cigna
+    # Pharma for Chronic Conditions
+    "LLY",  # Eli Lilly (Diabetes/Obesity)
+    "NVO",  # Novo Nordisk (Diabetes)
+    "ABBV",  # AbbVie (Immunology)
+    "PFE",  # Pfizer
+    "JNJ",  # Johnson & Johnson
+    # Medical Devices
+    "MDT",  # Medtronic
+    "ABT",  # Abbott
+    "BSX",  # Boston Scientific
+    "ZBH",  # Zimmer Biomet
+    "SYK",  # Stryker
+    # Senior Living REITs
+    "WELL",  # Welltower
+    "VTR",  # Ventas
+    # Life Insurance
+    "PRU",  # Prudential
+    "MET",  # MetLife
+]
+
+US_PORTFOLIO_MILLENNIAL_FAVORITES = [
+    # Companies popular with younger demographics
+    # Social & Entertainment
+    "META",  # Meta (Instagram)
+    "SNAP",  # Snapchat
+    "SPOT",  # Spotify
+    "NFLX",  # Netflix
+    "DIS",  # Disney
+    "RBLX",  # Roblox
+    # E-commerce & Services
+    "AMZN",  # Amazon
+    "ETSY",  # Etsy
+    "ABNB",  # Airbnb
+    "UBER",  # Uber
+    "DASH",  # DoorDash
+    # Fitness & Wellness
+    "LULU",  # Lululemon
+    "NKE",  # Nike
+    "PTON",  # Peloton
+    "PLNT",  # Planet Fitness
+    # Fintech
+    "SQ",  # Block/Cash App
+    "PYPL",  # PayPal/Venmo
+    "SOFI",  # SoFi
+    "HOOD",  # Robinhood
+    # Food & Beverage
+    "SBUX",  # Starbucks
+    "CMG",  # Chipotle
+]
+
+US_PORTFOLIO_INFRASTRUCTURE_SPENDING = [
+    # Beneficiaries of infrastructure investment
+    # Construction & Materials
+    "CAT",  # Caterpillar
+    "DE",  # Deere
+    "VMC",  # Vulcan Materials
+    "MLM",  # Martin Marietta
+    "NUE",  # Nucor Steel
+    "STLD",  # Steel Dynamics
+    # Engineering & Construction
+    "PWR",  # Quanta Services
+    "EME",  # EMCOR
+    "MTZ",  # MasTec
+    "J",  # Jacobs Solutions
+    "ACM",  # AECOM
+    # Rail & Transport
+    "UNP",  # Union Pacific
+    "CSX",  # CSX
+    "NSC",  # Norfolk Southern
+    # Utilities Infrastructure
+    "NEE",  # NextEra Energy
+    "ETN",  # Eaton
+    "EMR",  # Emerson Electric
+    # 5G/Broadband Infrastructure
+    "AMT",  # American Tower
+    "CCI",  # Crown Castle
+    "T",  # AT&T
+    "VZ",  # Verizon
+]
+
+US_PORTFOLIO_RESHORING_USA = [
+    # Companies benefiting from US manufacturing reshoring
+    # US Manufacturers
+    "CAT",  # Caterpillar
+    "DE",  # Deere
+    "EMR",  # Emerson
+    "ROK",  # Rockwell Automation
+    "TER",  # Teradyne
+    # US Semiconductors
+    "INTC",  # Intel (US fabs)
+    "TXN",  # Texas Instruments
+    "AMAT",  # Applied Materials
+    "LRCX",  # Lam Research
+    "KLAC",  # KLA
+    # Construction
+    "VMC",  # Vulcan Materials
+    "MLM",  # Martin Marietta
+    "BLDR",  # Builders FirstSource
+    # Utilities (Industrial Power)
+    "NEE",  # NextEra
+    "DUK",  # Duke
+    # Steel & Materials
+    "NUE",  # Nucor
+    "STLD",  # Steel Dynamics
+    "CLF",  # Cleveland-Cliffs
+    # Packaging
+    "PKG",  # Packaging Corp
+    "IP",  # International Paper
+]
+
+US_PORTFOLIO_WATER_SCARCITY = [
+    # Water infrastructure and management
+    # Water Utilities
+    "AWK",  # American Water Works
+    "WTRG",  # Essential Utilities
+    "CWT",  # California Water
+    "SJW",  # SJW Group
+    # Water Technology
+    "XYL",  # Xylem
+    "IEX",  # IDEX Corporation
+    "WTS",  # Watts Water Technologies
+    "FELE",  # Franklin Electric
+    # Infrastructure
+    "VMC",  # Vulcan Materials (Pipes)
+    "APG",  # APi Group
+    # Diversified Water Exposure
+    "ECL",  # Ecolab
+    "DHR",  # Danaher (Water quality)
+    "A",  # Agilent (Testing)
+    # Water ETFs
+    "PHO",  # Invesco Water Resources
+    "FIW",  # First Trust Water
+]
+
+# -----------------------------------------------------------------------------
+# INTERNATIONAL EXPOSURE PORTFOLIOS
+# -----------------------------------------------------------------------------
+
+US_PORTFOLIO_GLOBAL_LEADERS = [
+    # ADRs and US-listed global companies
+    # European ADRs
+    "ASML",  # ASML (Netherlands) - Semis
+    "NVO",  # Novo Nordisk (Denmark) - Pharma
+    "SAP",  # SAP (Germany) - Software
+    "TM",  # Toyota (Japan) - Auto
+    "SONY",  # Sony (Japan) - Electronics
+    "NVS",  # Novartis (Switzerland) - Pharma
+    "AZN",  # AstraZeneca (UK) - Pharma
+    "GSK",  # GSK (UK) - Pharma
+    "UL",  # Unilever (UK) - Consumer
+    "BP",  # BP (UK) - Energy
+    "SHEL",  # Shell (UK) - Energy
+    "RIO",  # Rio Tinto (UK) - Mining
+    "BHP",  # BHP Group (Australia) - Mining
+    # Asian ADRs
+    "BABA",  # Alibaba (China)
+    "TSM",  # TSMC (Taiwan)
+    "SE",  # Sea Limited (Singapore)
+    # International ETFs
+    "VEA",  # Developed Markets
+    "VWO",  # Emerging Markets
+    "EFA",  # MSCI EAFE
+    "IEMG",  # Core Emerging Markets
+]
+
+US_PORTFOLIO_EMERGING_MARKETS_GROWTH = [
+    # Emerging market exposure via ADRs and ETFs
+    # China
+    "BABA",  # Alibaba
+    "JD",  # JD.com
+    "PDD",  # PDD Holdings
+    "BIDU",  # Baidu
+    "NIO",  # NIO
+    "XPEV",  # XPeng
+    "LI",  # Li Auto
+    # India (Limited ADRs)
+    "IBN",  # ICICI Bank
+    "HDB",  # HDFC Bank
+    "INFY",  # Infosys
+    "WIT",  # Wipro
+    # Latin America
+    "NU",  # Nu Holdings (Brazil Fintech)
+    "MELI",  # MercadoLibre (Argentina)
+    # Taiwan/Korea
+    "TSM",  # TSMC
+    # Southeast Asia
+    "SE",  # Sea Limited
+    "GRAB",  # Grab Holdings
+    # EM ETFs
+    "VWO",  # Vanguard Emerging Markets
+    "IEMG",  # iShares Core EM
+    "EEM",  # iShares MSCI EM
+]
+
+# -----------------------------------------------------------------------------
+# RISK-PARITY INSPIRED PORTFOLIOS
+# -----------------------------------------------------------------------------
+
+US_PORTFOLIO_ALL_WEATHER = [
+    # Ray Dalio All-Weather inspired - balanced across economic environments
+    # Stocks (30%)
+    "VTI",  # Total US Stock Market
+    "VEA",  # Developed International
+    "VWO",  # Emerging Markets
+    # Long-term Bonds (40%)
+    "TLT",  # 20+ Year Treasury
+    "VGLT",  # Vanguard Long-Term Treasury
+    "EDV",  # Extended Duration Treasury
+    # Intermediate Bonds (15%)
+    "IEF",  # 7-10 Year Treasury
+    "VGIT",  # Intermediate Treasury
+    # Commodities (7.5%)
+    "GLD",  # Gold
+    "IAU",  # iShares Gold
+    # TIPS (7.5%)
+    "TIP",  # TIPS
+    "SCHP",  # Schwab TIPS
+]
+
+US_PORTFOLIO_PERMANENT = [
+    # Harry Browne Permanent Portfolio inspired - 25% each category
+    # Stocks (25%)
+    "VTI",  # Total US Stock Market
+    "VOO",  # S&P 500
+    # Long-term Bonds (25%)
+    "TLT",  # 20+ Year Treasury
+    "VGLT",  # Long-Term Treasury
+    # Gold (25%)
+    "GLD",  # Gold
+    "IAU",  # iShares Gold
+    # Cash/Short-term (25%)
+    "SHV",  # Short Treasury
+    "BIL",  # 1-3 Month T-Bill
+    "SGOV",  # 0-3 Month Treasury
+]
+
+US_PORTFOLIO_GOLDEN_BUTTERFLY = [
+    # Modified permanent portfolio with small cap value tilt
+    # Large Cap (20%)
+    "VTI",  # Total Market
+    # Small Cap Value (20%)
+    "VBR",  # Vanguard Small Cap Value
+    "IJS",  # iShares S&P SmallCap Value
+    # Long-term Bonds (20%)
+    "TLT",  # 20+ Year Treasury
+    # Short-term Bonds (20%)
+    "SHY",  # 1-3 Year Treasury
+    "VGSH",  # Short-Term Treasury
+    # Gold (20%)
+    "GLD",  # Gold
+    "IAU",  # iShares Gold
+]
+
 # -----------------------------------------------------------------------------
 # LEGACY COMBINED LIST (for backward compatibility)
 # -----------------------------------------------------------------------------
@@ -1609,6 +2327,39 @@ def get_us_tickers_by_category(category: str, limit: int = None) -> list[str]:
         "us_etfs_international": US_ETFS_INTERNATIONAL,
         "us_etfs_thematic": US_ETFS_THEMATIC,
         "us_etfs_dividend": US_ETFS_DIVIDEND,
+        # Balanced Portfolios
+        "us_portfolio_balanced_conservative": US_PORTFOLIO_BALANCED_CONSERVATIVE,
+        "us_portfolio_balanced_moderate": US_PORTFOLIO_BALANCED_MODERATE,
+        "us_portfolio_balanced_aggressive": US_PORTFOLIO_BALANCED_AGGRESSIVE,
+        # Income Portfolios
+        "us_portfolio_dividend_aristocrats": US_PORTFOLIO_DIVIDEND_ARISTOCRATS,
+        "us_portfolio_high_yield": US_PORTFOLIO_HIGH_YIELD_INCOME,
+        "us_portfolio_dividend_growth": US_PORTFOLIO_DIVIDEND_GROWTH,
+        # Growth Portfolios
+        "us_portfolio_tech_growth": US_PORTFOLIO_TECH_GROWTH,
+        "us_portfolio_next_gen_tech": US_PORTFOLIO_NEXT_GEN_TECH,
+        "us_portfolio_disruptive": US_PORTFOLIO_DISRUPTIVE_INNOVATION,
+        # Value Portfolios
+        "us_portfolio_deep_value": US_PORTFOLIO_DEEP_VALUE,
+        "us_portfolio_garp": US_PORTFOLIO_GARP,
+        "us_portfolio_quality_value": US_PORTFOLIO_QUALITY_VALUE,
+        # Economic Cycle
+        "us_portfolio_expansion": US_PORTFOLIO_ECONOMIC_EXPANSION,
+        "us_portfolio_contraction": US_PORTFOLIO_ECONOMIC_CONTRACTION,
+        "us_portfolio_inflation_hedge": US_PORTFOLIO_INFLATION_HEDGE,
+        # Thematic
+        "us_portfolio_aging_population": US_PORTFOLIO_AGING_POPULATION,
+        "us_portfolio_millennial": US_PORTFOLIO_MILLENNIAL_FAVORITES,
+        "us_portfolio_infrastructure": US_PORTFOLIO_INFRASTRUCTURE_SPENDING,
+        "us_portfolio_reshoring": US_PORTFOLIO_RESHORING_USA,
+        "us_portfolio_water": US_PORTFOLIO_WATER_SCARCITY,
+        # International
+        "us_portfolio_global_leaders": US_PORTFOLIO_GLOBAL_LEADERS,
+        "us_portfolio_emerging_markets": US_PORTFOLIO_EMERGING_MARKETS_GROWTH,
+        # Risk Parity
+        "us_portfolio_all_weather": US_PORTFOLIO_ALL_WEATHER,
+        "us_portfolio_permanent": US_PORTFOLIO_PERMANENT,
+        "us_portfolio_golden_butterfly": US_PORTFOLIO_GOLDEN_BUTTERFLY,
     }
 
     if category.lower() not in category_map:
@@ -1669,6 +2420,39 @@ def get_us_categories() -> dict[str, int]:
         "us_etfs_international": len(US_ETFS_INTERNATIONAL),
         "us_etfs_thematic": len(US_ETFS_THEMATIC),
         "us_etfs_dividend": len(US_ETFS_DIVIDEND),
+        # Balanced Portfolios
+        "us_portfolio_balanced_conservative": len(US_PORTFOLIO_BALANCED_CONSERVATIVE),
+        "us_portfolio_balanced_moderate": len(US_PORTFOLIO_BALANCED_MODERATE),
+        "us_portfolio_balanced_aggressive": len(US_PORTFOLIO_BALANCED_AGGRESSIVE),
+        # Income Portfolios
+        "us_portfolio_dividend_aristocrats": len(US_PORTFOLIO_DIVIDEND_ARISTOCRATS),
+        "us_portfolio_high_yield": len(US_PORTFOLIO_HIGH_YIELD_INCOME),
+        "us_portfolio_dividend_growth": len(US_PORTFOLIO_DIVIDEND_GROWTH),
+        # Growth Portfolios
+        "us_portfolio_tech_growth": len(US_PORTFOLIO_TECH_GROWTH),
+        "us_portfolio_next_gen_tech": len(US_PORTFOLIO_NEXT_GEN_TECH),
+        "us_portfolio_disruptive": len(US_PORTFOLIO_DISRUPTIVE_INNOVATION),
+        # Value Portfolios
+        "us_portfolio_deep_value": len(US_PORTFOLIO_DEEP_VALUE),
+        "us_portfolio_garp": len(US_PORTFOLIO_GARP),
+        "us_portfolio_quality_value": len(US_PORTFOLIO_QUALITY_VALUE),
+        # Economic Cycle
+        "us_portfolio_expansion": len(US_PORTFOLIO_ECONOMIC_EXPANSION),
+        "us_portfolio_contraction": len(US_PORTFOLIO_ECONOMIC_CONTRACTION),
+        "us_portfolio_inflation_hedge": len(US_PORTFOLIO_INFLATION_HEDGE),
+        # Thematic
+        "us_portfolio_aging_population": len(US_PORTFOLIO_AGING_POPULATION),
+        "us_portfolio_millennial": len(US_PORTFOLIO_MILLENNIAL_FAVORITES),
+        "us_portfolio_infrastructure": len(US_PORTFOLIO_INFRASTRUCTURE_SPENDING),
+        "us_portfolio_reshoring": len(US_PORTFOLIO_RESHORING_USA),
+        "us_portfolio_water": len(US_PORTFOLIO_WATER_SCARCITY),
+        # International
+        "us_portfolio_global_leaders": len(US_PORTFOLIO_GLOBAL_LEADERS),
+        "us_portfolio_emerging_markets": len(US_PORTFOLIO_EMERGING_MARKETS_GROWTH),
+        # Risk Parity
+        "us_portfolio_all_weather": len(US_PORTFOLIO_ALL_WEATHER),
+        "us_portfolio_permanent": len(US_PORTFOLIO_PERMANENT),
+        "us_portfolio_golden_butterfly": len(US_PORTFOLIO_GOLDEN_BUTTERFLY),
     }
 
 
@@ -1778,6 +2562,66 @@ if __name__ == "__main__":
     for cat in ["us_etfs_broad_market", "us_etfs_sector", "us_etfs_dividend", "us_etfs_thematic"]:
         print(f"    {cat}: {categories[cat]}")
 
+    print("\n💼 Portfolio Categories:")
+
+    print("\n  Balanced Portfolios:")
+    for cat in [
+        "us_portfolio_balanced_conservative",
+        "us_portfolio_balanced_moderate",
+        "us_portfolio_balanced_aggressive",
+    ]:
+        print(f"    {cat}: {categories[cat]}")
+
+    print("\n  Income Portfolios:")
+    for cat in [
+        "us_portfolio_dividend_aristocrats",
+        "us_portfolio_high_yield",
+        "us_portfolio_dividend_growth",
+    ]:
+        print(f"    {cat}: {categories[cat]}")
+
+    print("\n  Growth Portfolios:")
+    for cat in [
+        "us_portfolio_tech_growth",
+        "us_portfolio_next_gen_tech",
+        "us_portfolio_disruptive",
+    ]:
+        print(f"    {cat}: {categories[cat]}")
+
+    print("\n  Value Portfolios:")
+    for cat in ["us_portfolio_deep_value", "us_portfolio_garp", "us_portfolio_quality_value"]:
+        print(f"    {cat}: {categories[cat]}")
+
+    print("\n  Economic Cycle:")
+    for cat in [
+        "us_portfolio_expansion",
+        "us_portfolio_contraction",
+        "us_portfolio_inflation_hedge",
+    ]:
+        print(f"    {cat}: {categories[cat]}")
+
+    print("\n  Thematic:")
+    for cat in [
+        "us_portfolio_aging_population",
+        "us_portfolio_millennial",
+        "us_portfolio_infrastructure",
+        "us_portfolio_reshoring",
+        "us_portfolio_water",
+    ]:
+        print(f"    {cat}: {categories[cat]}")
+
+    print("\n  International:")
+    for cat in ["us_portfolio_global_leaders", "us_portfolio_emerging_markets"]:
+        print(f"    {cat}: {categories[cat]}")
+
+    print("\n  Risk Parity:")
+    for cat in [
+        "us_portfolio_all_weather",
+        "us_portfolio_permanent",
+        "us_portfolio_golden_butterfly",
+    ]:
+        print(f"    {cat}: {categories[cat]}")
+
     # Example queries
     print("\n" + "=" * 60)
     print("EXAMPLE QUERIES")
@@ -1790,6 +2634,11 @@ if __name__ == "__main__":
     print("\n🔍 Top 5 Small Cap tickers:")
     small_caps = get_us_tickers_by_category("us_small_cap", limit=5)
     print(f"   {small_caps}")
+
+    print("\n🔍 Balanced Conservative Portfolio:")
+    conservative = get_us_tickers_by_category("us_portfolio_balanced_conservative")
+    print(f"   Total: {len(conservative)} tickers")
+    print(f"   Sample: {conservative[:5]}")
 
     print("\n🔍 Combined analysis (Nordic + US Tech):")
     combined = get_tickers_for_analysis(

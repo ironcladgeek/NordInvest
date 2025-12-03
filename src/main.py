@@ -92,7 +92,7 @@ def _scan_market_for_anomalies(
                     "Market scan found no anomalies in the selected instruments.\n"
                     "To analyze all instruments anyway in LLM mode (higher cost), "
                     "use --force-full-analysis flag.\n"
-                    "Example: analyze --category us_mega_cap --llm --force-full-analysis"
+                    "Example: analyze --group us_mega_cap --llm --force-full-analysis"
                 )
             typer_instance.echo("  ⚠️  No anomalies detected, but proceeding with all instruments")
             typer_instance.echo("     (--force-full-analysis flag was provided)")
@@ -438,10 +438,11 @@ def analyze(
         "-m",
         help="Market to analyze: 'global', 'us', 'eu', 'nordic', or comma-separated (e.g., 'us,eu')",
     ),
-    category: str = typer.Option(
+    group: str = typer.Option(
         None,
-        "--category",
-        help="US ticker category: 'us_mega_cap', 'us_tech_software', 'us_ai_ml', 'us_cybersecurity', etc. Comma-separated for multiple (e.g., 'us_tech_software,us_ai_ml'). Use list-categories to see all options",
+        "--group",
+        "-g",
+        help="Ticker group: sector categories ('us_mega_cap', 'us_tech_software', 'us_ai_ml') or portfolios ('us_portfolio_balanced_conservative', 'us_portfolio_dividend_growth'). Comma-separated for multiple. Use list-categories or list-portfolios to see all options",
     ),
     ticker: str = typer.Option(
         None,
@@ -541,13 +542,15 @@ def analyze(
         analyze --ticker AAPL --date 2024-06-01
         analyze --ticker AAPL --date 2024-06-01 --llm
 
-        # Analyze US categories
-        analyze --category us_tech_software
-        analyze --category us_ai_ml,us_cybersecurity --limit 30
-        analyze --category us_mega_cap
+        # Analyze US groups (categories and portfolios)
+        analyze --group us_tech_software
+        analyze --group us_ai_ml,us_cybersecurity --limit 30
+        analyze --group us_mega_cap
+        analyze --group us_portfolio_balanced_conservative
+        analyze --group us_portfolio_dividend_growth
 
-        # Combine markets and categories
-        analyze --market nordic --category us_tech_software
+        # Combine markets and groups
+        analyze --market nordic --group us_tech_software
     """
     start_time = time.time()
     run_log = None
@@ -580,30 +583,31 @@ def analyze(
             save_report = False
             typer.echo("  Report saving: disabled (test mode)")
 
-    # Validate that either market, category, ticker, or test is provided
-    if not market and not category and not ticker and not test:
+    # Validate that either market, group, ticker, or test is provided
+    if not market and not group and not ticker and not test:
         typer.echo(
-            "❌ Error: Either --market, --category, --ticker, or --test must be provided\n"
+            "❌ Error: Either --market, --group, --ticker, or --test must be provided\n"
             "Examples:\n"
             "  analyze --test              # True test mode (offline, zero cost)\n"
             "  analyze --test --llm        # True test with mock LLM\n"
             "  analyze --market global\n"
             "  analyze --market us\n"
-            "  analyze --category us_tech_software\n"
-            "  analyze --category us_ai_ml,us_cybersecurity --limit 30\n"
+            "  analyze --group us_tech_software\n"
+            "  analyze --group us_ai_ml,us_cybersecurity --limit 30\n"
+            "  analyze --group us_portfolio_balanced_conservative\n"
             "  analyze --market us,eu --limit 50\n"
             "  analyze --ticker AAPL,MSFT,GOOGL",
             err=True,
         )
         raise typer.Exit(code=1)
 
-    if (market or category) and ticker:
-        typer.echo("❌ Error: Cannot specify --ticker with --market or --category", err=True)
+    if (market or group) and ticker:
+        typer.echo("❌ Error: Cannot specify --ticker with --market or --group", err=True)
         raise typer.Exit(code=1)
 
-    if test and (market or category or ticker):
+    if test and (market or group or ticker):
         typer.echo(
-            "❌ Error: Cannot use --test with --market, --category, or --ticker",
+            "❌ Error: Cannot use --test with --market, --group, or --ticker",
             err=True,
         )
         raise typer.Exit(code=1)
@@ -692,27 +696,25 @@ def analyze(
             ticker_list = [t.strip().upper() for t in ticker.split(",")]
             typer.echo(f"\n📊 Running analysis on {len(ticker_list)} specified instruments...")
             typer.echo(f"  Tickers: {', '.join(ticker_list)}")
-        elif category:
-            # Parse category specification
-            categories = [c.strip().lower() for c in category.split(",")]
-            typer.echo(
-                f"\n📊 Running analysis for category(ies): {', '.join(categories).upper()}..."
-            )
+        elif group:
+            # Parse group specification
+            groups = [g.strip().lower() for g in group.split(",")]
+            typer.echo(f"\n📊 Running analysis for group(s): {', '.join(groups).upper()}...")
 
-            # Validate categories
-            available_categories = get_us_categories()
-            invalid_categories = [c for c in categories if c not in available_categories]
-            if invalid_categories:
+            # Validate groups
+            available_groups = get_us_categories()
+            invalid_groups = [g for g in groups if g not in available_groups]
+            if invalid_groups:
                 typer.echo(
-                    f"❌ Error: Invalid category(ies): {', '.join(invalid_categories)}",
+                    f"❌ Error: Invalid group(s): {', '.join(invalid_groups)}",
                     err=True,
                 )
-                typer.echo("Available categories:", err=True)
-                for cat_name, count in sorted(available_categories.items()):
-                    typer.echo(f"  {cat_name}: {count} tickers", err=True)
+                typer.echo("Available groups:", err=True)
+                for group_name, count in sorted(available_groups.items()):
+                    typer.echo(f"  {group_name}: {count} tickers", err=True)
                 sys.exit(1)
 
-            # Get tickers from categories, optionally combined with markets
+            # Get tickers from groups, optionally combined with markets
             if market:
                 markets = (
                     ["global"]
@@ -722,16 +724,14 @@ def analyze(
                 if market.lower() == "global":
                     markets = ["nordic", "eu"]
                 ticker_list = get_tickers_for_analysis(
-                    markets=markets, categories=categories, limit_per_category=limit
+                    markets=markets, categories=groups, limit_per_category=limit
                 )
                 typer.echo(f"  Markets: {', '.join(markets).upper()}")
             else:
-                ticker_list = get_tickers_for_analysis(
-                    categories=categories, limit_per_category=limit
-                )
+                ticker_list = get_tickers_for_analysis(categories=groups, limit_per_category=limit)
 
             if limit:
-                typer.echo(f"  Limit: {limit} instruments per category")
+                typer.echo(f"  Limit: {limit} instruments per group")
             typer.echo(f"  Total instruments to analyze: {len(ticker_list)}")
         else:
             # Parse market specification
@@ -760,7 +760,7 @@ def analyze(
             typer.echo(f"  Total instruments to analyze: {len(ticker_list)}")
 
         # Prepare analysis context metadata
-        analyzed_category = None
+        analyzed_group = None
         analyzed_market = None
         analyzed_tickers_specified = []
         tickers_with_anomalies = []
@@ -768,8 +768,8 @@ def analyze(
 
         if ticker:
             analyzed_tickers_specified = [t.strip().upper() for t in ticker.split(",")]
-        elif category:
-            analyzed_category = category
+        elif group:
+            analyzed_group = group
         else:
             analyzed_market = market
 
@@ -875,7 +875,7 @@ def analyze(
                 generate_allocation=True,
                 report_date=report_date,
                 analysis_mode=analysis_mode,
-                analyzed_category=analyzed_category,
+                analyzed_category=analyzed_group,
                 analyzed_market=analyzed_market,
                 analyzed_tickers_specified=analyzed_tickers_specified,
                 initial_tickers=ticker_list,
@@ -972,7 +972,7 @@ def list_categories() -> None:
     """List all available US ticker categories.
 
     Shows all category names with the number of tickers in each.
-    Use these category names with the `analyze --category` option.
+    Use these category names with the `analyze --group` option.
     """
     categories = get_us_categories()
 
@@ -1041,9 +1041,93 @@ def list_categories() -> None:
 
     # Usage examples
     typer.echo("💡 Usage Examples:")
-    typer.echo("  analyze --category us_tech_software")
-    typer.echo("  analyze --category us_ai_ml,us_cybersecurity --limit 30")
-    typer.echo("  analyze --market nordic --category us_tech_software")
+    typer.echo("  analyze --group us_tech_software")
+    typer.echo("  analyze --group us_ai_ml,us_cybersecurity --limit 30")
+    typer.echo("  analyze --market nordic --group us_tech_software")
+    typer.echo()
+
+
+@app.command()
+def list_portfolios() -> None:
+    """List all available diversified portfolio categories.
+
+    Shows all pre-built portfolio categories with the number of tickers in each.
+    Use these portfolio names with the `analyze --group` option.
+    """
+    categories = get_us_categories()
+
+    # Filter for portfolio categories only
+    portfolio_categories = {k: v for k, v in categories.items() if k.startswith("us_portfolio_")}
+
+    typer.echo("\n💼 Available Diversified Portfolio Categories:\n")
+
+    # Group by portfolio type for better readability
+    groups = {
+        "Balanced Portfolios": [
+            "us_portfolio_balanced_conservative",
+            "us_portfolio_balanced_moderate",
+            "us_portfolio_balanced_aggressive",
+        ],
+        "Income Portfolios": [
+            "us_portfolio_dividend_aristocrats",
+            "us_portfolio_high_yield",
+            "us_portfolio_dividend_growth",
+        ],
+        "Growth Portfolios": [
+            "us_portfolio_tech_growth",
+            "us_portfolio_next_gen_tech",
+            "us_portfolio_disruptive",
+        ],
+        "Value Portfolios": [
+            "us_portfolio_deep_value",
+            "us_portfolio_garp",
+            "us_portfolio_quality_value",
+        ],
+        "Economic Cycle": [
+            "us_portfolio_expansion",
+            "us_portfolio_contraction",
+            "us_portfolio_inflation_hedge",
+        ],
+        "Thematic": [
+            "us_portfolio_aging_population",
+            "us_portfolio_millennial",
+            "us_portfolio_infrastructure",
+            "us_portfolio_reshoring",
+            "us_portfolio_water",
+        ],
+        "International": [
+            "us_portfolio_global_leaders",
+            "us_portfolio_emerging_markets",
+        ],
+        "Risk Parity": [
+            "us_portfolio_all_weather",
+            "us_portfolio_permanent",
+            "us_portfolio_golden_butterfly",
+        ],
+    }
+
+    for group_name, portfolio_list in groups.items():
+        typer.echo(f"📌 {group_name}:")
+        for portfolio in portfolio_list:
+            if portfolio in portfolio_categories:
+                count = portfolio_categories[portfolio]
+                typer.echo(f"  • {portfolio}: {count} tickers")
+        typer.echo()
+
+    # Summary
+    total_portfolios = len(portfolio_categories)
+    total_tickers = sum(portfolio_categories.values())
+    typer.echo("📊 Summary:")
+    typer.echo(f"  Total portfolios: {total_portfolios}")
+    typer.echo(f"  Total tickers across all portfolios: {total_tickers}")
+    typer.echo()
+
+    # Usage examples
+    typer.echo("💡 Usage Examples:")
+    typer.echo("  analyze --group us_portfolio_balanced_conservative")
+    typer.echo("  analyze --group us_portfolio_dividend_growth")
+    typer.echo("  analyze --group us_portfolio_tech_growth --llm")
+    typer.echo("  analyze --group us_portfolio_all_weather")
     typer.echo()
 
 
