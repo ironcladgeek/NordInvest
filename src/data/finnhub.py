@@ -225,11 +225,17 @@ class FinnhubProvider(DataProvider):
             logger.error(f"Error fetching company info for {ticker}: {e}")
             raise RuntimeError(f"Failed to fetch company info for {ticker}: {e}")
 
-    def get_recommendation_trends(self, ticker: str) -> Optional[dict]:
+    def get_recommendation_trends(
+        self, ticker: str, as_of_date: datetime | None = None
+    ) -> Optional[dict]:
         """Fetch analyst recommendation trends (FREE TIER endpoint).
+
+        Supports historical recommendation fetching for backtesting with strict date filtering
+        to prevent look-ahead bias.
 
         Args:
             ticker: Stock ticker symbol
+            as_of_date: Optional date for historical recommendations (only fetch recommendations before this date)
 
         Returns:
             Dictionary with analyst ratings distribution or None if not available
@@ -242,7 +248,7 @@ class FinnhubProvider(DataProvider):
             raise ValueError("Finnhub API key is not configured")
 
         try:
-            logger.debug(f"Fetching recommendation trends for {ticker}")
+            logger.debug(f"Fetching recommendation trends for {ticker} (as_of_date={as_of_date})")
 
             response = requests.get(
                 f"{FINNHUB_BASE_URL}/stock/recommendation",
@@ -267,8 +273,38 @@ class FinnhubProvider(DataProvider):
                 logger.debug(f"No recommendation trend data available for {ticker}")
                 return None
 
-            # Get most recent recommendation data
-            latest = data[-1]  # Last item is most recent
+            # For historical analysis: find most recent recommendation before as_of_date
+            # For current analysis: use most recent recommendation (current behavior)
+            if as_of_date:
+                as_of_date_only = as_of_date.date() if hasattr(as_of_date, "date") else as_of_date
+                logger.debug(
+                    f"Filtering recommendation trends for historical date {as_of_date_only}"
+                )
+
+                # Find most recent recommendation with period <= as_of_date
+                matching_trend = None
+                for trend in data:
+                    trend_period_str = trend.get("period", "")
+                    try:
+                        trend_date = datetime.strptime(trend_period_str, "%Y-%m-%d").date()
+                        if trend_date <= as_of_date_only:
+                            matching_trend = trend
+                            # Continue to find the most recent matching one
+                    except (ValueError, TypeError):
+                        logger.debug(f"Could not parse period: {trend_period_str}")
+                        continue
+
+                if not matching_trend:
+                    logger.debug(
+                        f"No recommendation trends available for {ticker} before {as_of_date_only}"
+                    )
+                    return None
+
+                latest = matching_trend
+            else:
+                # Current analysis: use most recent recommendation
+                latest = data[-1]  # Last item is most recent
+
             return {
                 "ticker": ticker,
                 "period": latest.get("period"),
