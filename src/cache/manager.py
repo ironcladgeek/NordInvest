@@ -303,8 +303,14 @@ class CacheManager:
     ) -> Optional[Any]:
         """Get cached data for a ticker as of a specific date.
 
-        For historical analysis, tries to find cache files that were created
-        on or before the specified date.
+        For historical analysis, tries to find cache files that contain data
+        available on or before the specified date.
+
+        For price data (format: TICKER_prices_START_END.json):
+        - Looks for files where END >= as_of_date (data available on that date)
+
+        For other data (format: TICKER_type_DATE.json):
+        - Looks for files where DATE <= as_of_date (created on or before that date)
 
         Args:
             ticker: Stock ticker symbol
@@ -322,20 +328,49 @@ class CacheManager:
                 logger.debug(f"No historical cache found for {ticker}")
                 return None
 
-            # Filter files with dates <= as_of_date
+            # Filter files based on type (price vs other data)
             valid_files = []
             for file_path in matching_files:
-                # Try to extract date from filename (YYYY-MM-DD format)
                 filename = file_path.stem  # Remove .json extension
                 parts = filename.split("_")
-                for part in parts:
-                    if len(part) == 10 and part[4] == "-" and part[7] == "-":
-                        if part <= as_of_date:  # String comparison works for YYYY-MM-DD
-                            valid_files.append((part, file_path))
-                        break
+
+                # Check if this is price data (has format: TICKER_prices_START_END)
+                if "prices" in parts:
+                    # For price data, extract start and end dates
+                    try:
+                        price_idx = parts.index("prices")
+                        if price_idx + 2 < len(parts):
+                            start_date = parts[price_idx + 1]
+                            end_date = parts[price_idx + 2]
+                            # Valid if end_date >= as_of_date (includes historical date)
+                            if (
+                                len(start_date) == 10
+                                and len(end_date) == 10
+                                and end_date >= as_of_date
+                            ):
+                                # Use the earliest matching file (most complete data)
+                                valid_files.append((end_date, file_path))
+                                logger.debug(
+                                    f"Price cache {file_path.name} covers {start_date} to {end_date}, "
+                                    f"includes as_of_date {as_of_date}"
+                                )
+                    except (ValueError, IndexError):
+                        pass
+
+                # For other data types, look for single date in filename
+                if not valid_files or "prices" not in parts:
+                    for part in parts:
+                        if len(part) == 10 and part[4] == "-" and part[7] == "-":
+                            # For non-price data, use date <= as_of_date
+                            if part <= as_of_date:
+                                valid_files.append((part, file_path))
+                                logger.debug(
+                                    f"Cache {file_path.name} dated {part} is <= {as_of_date}"
+                                )
+                            break
 
             if not valid_files:
-                logger.debug(f"No historical cache found for {ticker} before {as_of_date}")
+                logger.debug(f"No historical cache found for {ticker} as of {as_of_date}")
                 return None
 
             # Use the most recent valid file
@@ -345,7 +380,7 @@ class CacheManager:
             with open(most_recent_file, "r") as f:
                 cached = json.load(f)
                 logger.debug(
-                    f"Found historical cache for {ticker} as of {most_recent_date}: "
+                    f"Found historical cache for {ticker} as of {as_of_date}: "
                     f"{most_recent_file.name}"
                 )
                 return cached.get("data")
