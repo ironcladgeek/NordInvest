@@ -334,21 +334,7 @@ uv run poe lint
 
 ## Documentation
 
-### Core Documentation
-- **[Architecture](docs/architecture.mermaid)** - System design and component overview
-- **[Analyze Workflow](docs/analyze_workflow.mermaid)** - Detailed analyze command flow
-- **[Roadmap](docs/roadmap.md)** - Implementation plan and development phases
-- **[Developer Guide](CLAUDE.md)** - Development setup and contribution guidelines
-
-### LLM & AI Integration
-- **[LLM CLI Guide](docs/llm_cli_guide.md)** - How to use `--llm` flag
-- **[LLM Integration Guide](docs/llm_integration.md)** - Component architecture and API reference
-- **[LLM Configuration](docs/LLM_CONFIGURATION.md)** - AI vs Rule-based modes
-
-### Configuration & Setup
-- **[Market Configuration Guide](docs/MARKET_CONFIG_GUIDE.md)** - Market selection and filtering
-- **[Quick Start: Full Market](docs/QUICK_START_FULL_MARKET.md)** - Large market analysis
-- **[Full Market Setup](docs/FULL_MARKET_ANALYSIS_SETUP.md)** - Comprehensive coverage
+TBD
 
 ## Technology Stack
 
