@@ -1,9 +1,11 @@
 """Pydantic models for financial data standardization."""
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
+from sqlmodel import Field as SQLField
+from sqlmodel import SQLModel
 
 
 class Market(str, Enum):
@@ -142,3 +144,51 @@ class HistoricalContext(BaseModel):
     )
 
     model_config = ConfigDict(use_enum_values=True)
+
+
+class AnalystData(SQLModel, table=True):
+    """Historical analyst ratings data stored in database.
+
+    Stores monthly snapshots of analyst ratings. APIs typically only provide
+    current + 3 months, so this table accumulates ratings over time.
+    """
+
+    __tablename__ = "analyst_ratings"
+
+    id: int | None = SQLField(default=None, primary_key=True)
+    ticker: str = SQLField(index=True, description="Stock ticker symbol")
+    period: date = SQLField(index=True, description="First day of the month (e.g., 2025-09-01)")
+    strong_buy: int = SQLField(description="Count of strong buy ratings")
+    buy: int = SQLField(description="Count of buy ratings")
+    hold: int = SQLField(description="Count of hold ratings")
+    sell: int = SQLField(description="Count of sell ratings")
+    strong_sell: int = SQLField(description="Count of strong sell ratings")
+    total_analysts: int = SQLField(description="Total number of analysts")
+    data_source: str = SQLField(description="Data source: Finnhub, AlphaVantage, Yahoo, etc.")
+    fetched_at: datetime = SQLField(
+        default_factory=datetime.now, description="Timestamp when data was fetched"
+    )
+
+    def to_analyst_rating(self) -> AnalystRating:
+        """Convert database record to AnalystRating model."""
+        # Determine consensus based on distribution
+        ratings = [
+            ("strong_buy", self.strong_buy),
+            ("buy", self.buy),
+            ("hold", self.hold),
+            ("sell", self.sell),
+            ("strong_sell", self.strong_sell),
+        ]
+        consensus = max(ratings, key=lambda x: x[1])[0] if self.total_analysts > 0 else None
+
+        return AnalystRating(
+            ticker=self.ticker,
+            name="",  # Not stored in database
+            rating_date=datetime.combine(self.period, datetime.min.time()),
+            rating=consensus or "hold",
+            price_target=None,
+            num_analysts=self.total_analysts,
+            consensus=consensus,
+        )
+
+    model_config = ConfigDict(from_attributes=True)
