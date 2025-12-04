@@ -439,7 +439,7 @@ class RunSessionRepository:
         initial_tickers_count: int = 0,
         anomalies_count: int = 0,
         force_full_analysis: bool = False,
-    ) -> str:
+    ) -> int:
         """Create a new run session.
 
         Args:
@@ -452,18 +452,14 @@ class RunSessionRepository:
             force_full_analysis: Whether --force-full-analysis was used.
 
         Returns:
-            Session ID (UUID string).
+            Session ID (auto-incrementing integer).
         """
         import json
-        import uuid
 
         try:
-            session_id = str(uuid.uuid4())
-
             session = self.db_manager.get_session()
             try:
                 run_session = RunSession(
-                    id=session_id,
                     started_at=datetime.now(),
                     analysis_mode=analysis_mode,
                     analyzed_category=analyzed_category,
@@ -481,7 +477,9 @@ class RunSessionRepository:
 
                 session.add(run_session)
                 session.commit()
+                session.refresh(run_session)  # Refresh to get the auto-generated ID
 
+                session_id = run_session.id
                 logger.debug(f"Created run session: {session_id} ({analysis_mode})")
                 return session_id
 
@@ -494,7 +492,7 @@ class RunSessionRepository:
 
     def complete_session(
         self,
-        session_id: str,
+        session_id: int,
         signals_generated: int,
         signals_failed: int,
         status: str = "completed",
@@ -503,7 +501,7 @@ class RunSessionRepository:
         """Mark session as completed.
 
         Args:
-            session_id: Session ID (UUID).
+            session_id: Session ID (integer).
             signals_generated: Number of signals successfully created.
             signals_failed: Number of tickers that failed analysis.
             status: Final status ('completed', 'failed', 'partial').
@@ -613,31 +611,35 @@ class RecommendationsRepository:
     def store_recommendation(
         self,
         signal,  # InvestmentSignal type (imported dynamically to avoid circular import)
-        run_session_id: str,
+        run_session_id: int,
         analysis_mode: str,
         llm_model: str | None = None,
-    ) -> str:
+    ) -> int:
         """Store a single recommendation.
 
         Args:
             signal: InvestmentSignal Pydantic model.
-            run_session_id: UUID linking to run session.
+            run_session_id: Integer ID linking to run session.
             analysis_mode: 'rule_based' or 'llm'.
             llm_model: LLM model name (if applicable).
 
         Returns:
-            recommendation_id (UUID).
+            recommendation_id (auto-incrementing integer).
         """
         import json
-        import uuid
+        from datetime import datetime
 
         try:
-            recommendation_id = str(uuid.uuid4())
-
             session = self.db_manager.get_session()
             try:
                 # Get or create ticker
                 ticker_obj = self._get_or_create_ticker(session, signal.ticker, signal.name)
+
+                # Convert analysis_date string to date object
+                if isinstance(signal.analysis_date, str):
+                    analysis_date = datetime.strptime(signal.analysis_date, "%Y-%m-%d").date()
+                else:
+                    analysis_date = signal.analysis_date
 
                 # Serialize complex fields to JSON
                 risk_flags_json = json.dumps(signal.risk.flags) if signal.risk.flags else None
@@ -646,10 +648,9 @@ class RecommendationsRepository:
 
                 # Create recommendation record
                 recommendation = Recommendation(
-                    id=recommendation_id,
                     ticker_id=ticker_obj.id,
                     run_session_id=run_session_id,
-                    analysis_date=signal.analysis_date,
+                    analysis_date=analysis_date,
                     analysis_mode=analysis_mode,
                     llm_model=llm_model,
                     signal_type=signal.recommendation.value,
@@ -674,7 +675,9 @@ class RecommendationsRepository:
 
                 session.add(recommendation)
                 session.commit()
+                session.refresh(recommendation)  # Refresh to get the auto-generated ID
 
+                recommendation_id = recommendation.id
                 logger.debug(f"Stored recommendation {recommendation_id} for {signal.ticker}")
                 return recommendation_id
 
@@ -685,14 +688,76 @@ class RecommendationsRepository:
             logger.error(f"Error storing recommendation for {signal.ticker}: {e}")
             raise
 
-    def get_recommendations_by_session(self, run_session_id: str) -> list:
+    def _to_investment_signal(self, recommendation: Recommendation):
+        """Convert Recommendation database model to InvestmentSignal Pydantic model.
+
+        Args:
+            recommendation: Recommendation database object.
+
+        Returns:
+            InvestmentSignal Pydantic model.
+        """
+        import json
+
+        from src.analysis import InvestmentSignal
+        from src.analysis.models import ComponentScores, RiskAssessment, RiskLevel
+        from src.analysis.models import Recommendation as RecommendationType
+
+        # Deserialize JSON fields
+        risk_flags = json.loads(recommendation.risk_flags) if recommendation.risk_flags else []
+        key_reasons = json.loads(recommendation.key_reasons) if recommendation.key_reasons else []
+        caveats = json.loads(recommendation.caveats) if recommendation.caveats else []
+
+        # Create ComponentScores
+        scores = ComponentScores(
+            technical=recommendation.technical_score or 50.0,
+            fundamental=recommendation.fundamental_score or 50.0,
+            sentiment=recommendation.sentiment_score or 50.0,
+        )
+
+        # Create RiskAssessment
+        risk = RiskAssessment(
+            level=RiskLevel(recommendation.risk_level)
+            if recommendation.risk_level
+            else RiskLevel.MEDIUM,
+            volatility=recommendation.risk_volatility or "normal",
+            volatility_pct=recommendation.risk_volatility_pct or 0.0,
+            liquidity="normal",  # Default - not stored in recommendations table
+            concentration_risk=False,  # Default - not stored in recommendations table
+            flags=risk_flags,
+        )
+
+        # Create InvestmentSignal
+        return InvestmentSignal(
+            ticker=recommendation.ticker_obj.symbol,
+            name=recommendation.ticker_obj.name,
+            market="unknown",  # Not stored in recommendations table
+            sector=None,  # Not stored in recommendations table
+            current_price=recommendation.current_price,
+            currency=recommendation.currency,
+            scores=scores,
+            final_score=recommendation.final_score,
+            recommendation=RecommendationType(recommendation.signal_type),
+            confidence=recommendation.confidence,
+            time_horizon=recommendation.time_horizon or "3M",
+            expected_return_min=recommendation.expected_return_min or 0.0,
+            expected_return_max=recommendation.expected_return_max or 0.0,
+            key_reasons=key_reasons,
+            risk=risk,
+            generated_at=recommendation.created_at,
+            analysis_date=recommendation.analysis_date.strftime("%Y-%m-%d"),
+            rationale=recommendation.rationale,
+            caveats=caveats,
+        )
+
+    def get_recommendations_by_session(self, run_session_id: int) -> list:
         """Get all recommendations for a specific run session.
 
         Args:
-            run_session_id: UUID of the run session.
+            run_session_id: Integer ID of the run session.
 
         Returns:
-            List of Recommendation objects.
+            List of InvestmentSignal Pydantic models.
         """
         try:
             session = self.db_manager.get_session()
@@ -703,7 +768,8 @@ class RecommendationsRepository:
                     .order_by(Recommendation.created_at)
                 ).all()
 
-                return list(recommendations)
+                # Convert to InvestmentSignal objects
+                return [self._to_investment_signal(rec) for rec in recommendations]
 
             finally:
                 session.close()
@@ -712,16 +778,22 @@ class RecommendationsRepository:
             logger.error(f"Error retrieving recommendations for session {run_session_id}: {e}")
             return []
 
-    def get_recommendations_by_date(self, analysis_date: date) -> list:
+    def get_recommendations_by_date(self, analysis_date: date | str) -> list:
         """Get all recommendations for a specific analysis date.
 
         Args:
-            analysis_date: Date when analysis was performed.
+            analysis_date: Date when analysis was performed (date object or YYYY-MM-DD string).
 
         Returns:
-            List of Recommendation objects.
+            List of InvestmentSignal Pydantic models.
         """
+        from datetime import datetime
+
         try:
+            # Convert string to date if needed
+            if isinstance(analysis_date, str):
+                analysis_date = datetime.strptime(analysis_date, "%Y-%m-%d").date()
+
             session = self.db_manager.get_session()
             try:
                 recommendations = session.exec(
@@ -730,7 +802,8 @@ class RecommendationsRepository:
                     .order_by(Recommendation.created_at)
                 ).all()
 
-                return list(recommendations)
+                # Convert to InvestmentSignal objects
+                return [self._to_investment_signal(rec) for rec in recommendations]
 
             finally:
                 session.close()

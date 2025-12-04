@@ -30,6 +30,7 @@ class AnalysisPipeline:
         llm_provider: str | None = None,
         test_mode_config: Any | None = None,
         db_path: str | None = None,
+        run_session_id: int | None = None,
     ):
         """Initialize analysis pipeline.
 
@@ -39,12 +40,21 @@ class AnalysisPipeline:
             portfolio_manager: Optional portfolio state manager for position tracking
             llm_provider: Optional LLM provider to check configuration for
             test_mode_config: Optional test mode configuration for fixtures/mock LLM
-            db_path: Optional path to database for storing analyst ratings
+            db_path: Optional path to database for storing analyst ratings and recommendations
+            run_session_id: Optional integer ID linking signals to a specific analysis run session
         """
         self.config = config
         self.cache_manager = cache_manager
         self.portfolio_manager = portfolio_manager
         self.test_mode_config = test_mode_config
+        self.run_session_id = run_session_id
+
+        # Initialize database repositories if db_path provided
+        self.recommendations_repo = None
+        if db_path:
+            from src.data.repository import RecommendationsRepository
+
+            self.recommendations_repo = RecommendationsRepository(db_path)
 
         # Initialize components
         self.crew = AnalysisCrew(
@@ -118,6 +128,21 @@ class AnalysisPipeline:
                 if signal:
                     signals.append(signal)
 
+                    # Store signal to database if enabled
+                    if self.recommendations_repo and self.run_session_id:
+                        try:
+                            self.recommendations_repo.store_recommendation(
+                                signal=signal,
+                                run_session_id=self.run_session_id,
+                                analysis_mode="rule_based",
+                                llm_model=None,
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to store recommendation for {signal.ticker} to database: {e}"
+                            )
+                            # Continue execution - DB failures don't halt pipeline
+
             logger.debug(f"Generated {len(signals)} investment signals")
 
             # Phase 3: Generate portfolio allocation
@@ -132,7 +157,7 @@ class AnalysisPipeline:
 
     def generate_daily_report(
         self,
-        signals: list[InvestmentSignal],
+        signals: list[InvestmentSignal] | None = None,
         market_overview: str = "",
         generate_allocation: bool = True,
         report_date: str | None = None,
@@ -143,14 +168,17 @@ class AnalysisPipeline:
         initial_tickers: list[str] | None = None,
         tickers_with_anomalies: list[str] | None = None,
         force_full_analysis_used: bool = False,
+        run_session_id: int | None = None,
     ) -> DailyReport:
-        """Generate daily analysis report from signals.
+        """Generate daily analysis report from signals or database.
+
+        Priority: in-memory signals > run_session_id > report_date
 
         Args:
-            signals: List of investment signals
+            signals: List of investment signals (optional - loads from DB if not provided)
             market_overview: Optional market overview text
             generate_allocation: Whether to generate allocation suggestions
-            report_date: Report date (YYYY-MM-DD), uses today if not provided
+            report_date: Report date (YYYY-MM-DD), uses today if not provided (also used to load from DB)
             analysis_mode: Analysis mode used ("llm" or "rule_based")
             analyzed_category: Category analyzed (e.g., us_tech_software)
             analyzed_market: Market analyzed (e.g., us, nordic, eu, global)
@@ -158,11 +186,38 @@ class AnalysisPipeline:
             initial_tickers: Complete list of initial tickers before filtering
             tickers_with_anomalies: Tickers with anomalies from Stage 1 market scan (LLM mode)
             force_full_analysis_used: Whether --force-full-analysis flag was provided
+            run_session_id: Load signals from this run session (if signals not provided)
 
         Returns:
             Daily report object
         """
-        logger.debug(f"Generating daily report with {len(signals)} signals")
+        # Load signals from database if not provided in-memory
+        data_source = "in-memory"
+        if signals is None:
+            if not self.recommendations_repo:
+                raise ValueError(
+                    "Database not enabled but no signals provided. "
+                    "Either provide signals or enable database in config."
+                )
+
+            if run_session_id:
+                logger.debug(f"Loading signals from run session: {run_session_id}")
+                signals = self.recommendations_repo.get_recommendations_by_session(run_session_id)
+                data_source = f"database (session: {run_session_id})"
+            elif report_date:
+                logger.debug(f"Loading signals for date: {report_date}")
+                signals = self.recommendations_repo.get_recommendations_by_date(report_date)
+                data_source = f"database (date: {report_date})"
+            else:
+                raise ValueError(
+                    "Must provide signals, run_session_id, or report_date for report generation"
+                )
+
+            if not signals:
+                logger.warning(f"No signals found in database for specified criteria")
+                signals = []  # Empty list for report generation
+
+        logger.debug(f"Generating daily report with {len(signals)} signals from {data_source}")
 
         try:
             # Generate allocation if requested

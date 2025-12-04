@@ -125,6 +125,8 @@ def _run_llm_analysis(
     is_filtered: bool = False,
     cache_manager=None,
     historical_date=None,
+    run_session_id: int | None = None,
+    recommendations_repo=None,
 ) -> tuple[list[InvestmentSignal], None]:
     """Run analysis using LLM-powered orchestrator.
 
@@ -136,6 +138,8 @@ def _run_llm_analysis(
         is_filtered: Whether tickers have been pre-filtered by market scan
         cache_manager: Cache manager instance
         historical_date: Optional date for historical analysis
+        run_session_id: Optional UUID linking signals to analysis run session
+        recommendations_repo: Optional repository for storing recommendations
 
     Returns:
         Tuple of (signals, portfolio_manager)
@@ -240,6 +244,21 @@ def _run_llm_analysis(
                             )
                             if signal:
                                 signals.append(signal)
+
+                                # Store signal to database if enabled
+                                if recommendations_repo and run_session_id:
+                                    try:
+                                        recommendations_repo.store_recommendation(
+                                            signal=signal,
+                                            run_session_id=run_session_id,
+                                            analysis_mode="llm",
+                                            llm_model=config_obj.llm.model,
+                                        )
+                                    except Exception as e:
+                                        logger.warning(
+                                            f"Failed to store recommendation for {ticker} to database: {e}"
+                                        )
+                                        # Continue execution - DB failures don't halt pipeline
                         else:
                             logger.warning(f"Synthesis failed for {ticker}, skipping")
 
@@ -622,9 +641,18 @@ def analyze(
         setup_logging(config_obj.logging)
 
         # Initialize database if enabled
+        run_session_id: int | None = None
+        session_repo = None
+        recommendations_repo = None
         if config_obj.database.enabled:
             init_db(config_obj.database.db_path)
             logger.debug(f"Database initialized at {config_obj.database.db_path}")
+
+            # Initialize repositories for session management
+            from src.data.repository import RecommendationsRepository, RunSessionRepository
+
+            session_repo = RunSessionRepository(config_obj.database.db_path)
+            recommendations_repo = RecommendationsRepository(config_obj.database.db_path)
 
         # Check LLM configuration and warn if using fallback mode
         llm_configured = log_llm_status(config_obj.llm.provider)
@@ -681,6 +709,7 @@ def analyze(
             llm_provider=config_obj.llm.provider,
             test_mode_config=config_obj.test_mode if test else None,
             db_path=config_obj.database.db_path if config_obj.database.enabled else None,
+            run_session_id=run_session_id,
         )
 
         # Determine which tickers to analyze
@@ -813,6 +842,23 @@ def analyze(
                     f"  ✓ Historical data fetched for {len(historical_context_data)} instruments"
                 )
 
+        # Create run session if database is enabled
+        if session_repo:
+            run_session_id = session_repo.create_session(
+                analysis_mode="llm" if use_llm else "rule_based",
+                analyzed_category=analyzed_group,
+                analyzed_market=analyzed_market,
+                analyzed_tickers_specified=analyzed_tickers_specified
+                if analyzed_tickers_specified
+                else None,
+                initial_tickers_count=len(ticker_list),
+                anomalies_count=0,  # Will be updated after market scan in LLM mode
+                force_full_analysis=force_full_analysis,
+            )
+            # Update pipeline with session ID
+            pipeline.run_session_id = run_session_id
+            logger.debug(f"Created run session: {run_session_id}")
+
         # Run analysis (LLM or rule-based)
         if use_llm:
             typer.echo("\n🤖 Using two-stage LLM-powered analysis")
@@ -856,6 +902,8 @@ def analyze(
                 is_filtered=True,
                 cache_manager=cache_manager,
                 historical_date=historical_date,
+                run_session_id=run_session_id,
+                recommendations_repo=recommendations_repo,
             )
             analysis_mode = "llm"
         else:
@@ -870,6 +918,28 @@ def analyze(
             signals, portfolio_manager = pipeline.run_analysis(ticker_list, analysis_context)
             analysis_mode = "rule_based"
         signals_count = len(signals)
+
+        # Complete run session if database is enabled
+        if session_repo and run_session_id:
+            # Calculate failed count (initial tickers - generated signals)
+            initial_count = len(ticker_list)
+            failed_count = initial_count - signals_count
+
+            # Determine status
+            if signals_count == initial_count:
+                status = "completed"
+            elif signals_count > 0:
+                status = "partial"
+            else:
+                status = "failed"
+
+            session_repo.complete_session(
+                session_id=run_session_id,
+                signals_generated=signals_count,
+                signals_failed=failed_count,
+                status=status,
+            )
+            logger.debug(f"Completed run session: {run_session_id} (status: {status})")
 
         if signals:
             typer.echo(f"✓ Analysis complete: {signals_count} signals generated")
@@ -972,6 +1042,164 @@ def analyze(
                 signal_count=signals_count,
                 error_message=str(e),
             )
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def report(
+    session_id: int | None = typer.Option(
+        None, "--session-id", help="Generate report from run session ID (integer)"
+    ),
+    date: str | None = typer.Option(
+        None, "--date", help="Generate report for specific date (YYYY-MM-DD)"
+    ),
+    output_format: str = typer.Option(
+        "markdown", "--format", help="Output format: markdown or json"
+    ),
+    save_report: bool = typer.Option(
+        True, "--save/--no-save", help="Save report to file (default: save)"
+    ),
+    config: str = typer.Option(
+        "config/default.yaml",
+        "--config",
+        "-c",
+        help="Path to configuration file",
+    ),
+) -> None:
+    """Generate report from stored database results.
+
+    Load investment signals from the database and regenerate reports.
+    You can specify either a run session ID or a date.
+
+    Examples:
+        # Generate report from a specific session
+        report --session-id 02a27c22-a123-4378-8654-95c592a66e2f
+
+        # Generate report for all signals from a specific date
+        report --date 2025-12-04
+
+        # Generate JSON report instead of markdown
+        report --session-id abc123 --format json
+    """
+    try:
+        # Validate inputs
+        if not session_id and not date:
+            typer.echo("❌ Error: Must specify either --session-id or --date", err=True)
+            typer.echo("Examples:", err=True)
+            typer.echo("  report --session-id 02a27c22-a123-4378-8654-95c592a66e2f", err=True)
+            typer.echo("  report --date 2025-12-04", err=True)
+            raise typer.Exit(code=1)
+
+        if session_id and date:
+            typer.echo(
+                "❌ Error: Cannot specify both --session-id and --date. Choose one.", err=True
+            )
+            raise typer.Exit(code=1)
+
+        # Validate date format if provided
+        if date:
+            try:
+                datetime.strptime(date, "%Y-%m-%d")
+            except ValueError:
+                typer.echo(f"❌ Error: Invalid date format '{date}'. Use YYYY-MM-DD", err=True)
+                raise typer.Exit(code=1)
+
+        # Load configuration
+        config_obj = load_config(config)
+
+        # Setup logging
+        setup_logging(config_obj.logging)
+
+        # Check if database is enabled
+        if not config_obj.database.enabled:
+            typer.echo(
+                "❌ Error: Database is not enabled in configuration.\n"
+                "   Enable database in config file to use historical reports.",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+
+        # Initialize database
+        init_db(config_obj.database.db_path)
+        logger.debug(f"Database initialized at {config_obj.database.db_path}")
+
+        typer.echo("📊 Generating report from database...")
+        if session_id:
+            typer.echo(f"  Session ID: {session_id}")
+        else:
+            typer.echo(f"  Date: {date}")
+
+        # Initialize components
+        data_dir = Path("data")
+        cache_manager = CacheManager(str(data_dir / "cache"))
+        portfolio_manager = PortfolioState(data_dir / "portfolio_state.json")
+
+        pipeline_config = {
+            "capital_starting": config_obj.capital.starting_capital_eur,
+            "capital_monthly_deposit": config_obj.capital.monthly_deposit_eur,
+            "max_position_size_pct": 10.0,
+            "max_sector_concentration_pct": 20.0,
+            "include_disclaimers": True,
+        }
+
+        pipeline = AnalysisPipeline(
+            pipeline_config,
+            cache_manager,
+            portfolio_manager,
+            llm_provider=config_obj.llm.provider,
+            test_mode_config=None,
+            db_path=config_obj.database.db_path,
+            run_session_id=session_id,  # Pass session_id if provided
+        )
+
+        # Generate report from database
+        report_obj = pipeline.generate_daily_report(
+            signals=None,  # Load from database
+            generate_allocation=True,
+            report_date=date,
+            run_session_id=session_id,
+        )
+
+        # Display summary
+        typer.echo("\n📈 Report Summary:")
+        typer.echo(f"  Report date: {report_obj.report_date}")
+        typer.echo(f"  Strong signals: {report_obj.strong_signals_count}")
+        typer.echo(f"  Moderate signals: {report_obj.moderate_signals_count}")
+        typer.echo(f"  Total analyzed: {report_obj.total_signals_generated}")
+
+        if report_obj.allocation_suggestion:
+            typer.echo(
+                f"  Diversification score: {report_obj.allocation_suggestion.diversification_score}%"
+            )
+            typer.echo(
+                f"  Recommended allocation: €{report_obj.allocation_suggestion.total_allocated:,.0f}"
+            )
+
+        # Save report if requested
+        if save_report:
+            reports_dir = data_dir / "reports"
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime("%H-%M-%S")
+
+            if output_format == "markdown":
+                report_path = reports_dir / f"report_{report_obj.report_date}_{timestamp}.md"
+                report_content = pipeline.report_generator.to_markdown(report_obj)
+                with open(report_path, "w") as f:
+                    f.write(report_content)
+                typer.echo(f"\n✓ Report saved: {report_path}")
+            else:
+                report_path = reports_dir / f"report_{report_obj.report_date}_{timestamp}.json"
+                with open(report_path, "w") as f:
+                    json.dump(pipeline.report_generator.to_json(report_obj), f, indent=2)
+                typer.echo(f"\n✓ Report saved: {report_path}")
+        else:
+            typer.echo("\n✓ Report generated (not saved)")
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating report: {e}", exc_info=True)
+        typer.echo(f"\n❌ Error generating report: {e}", err=True)
         raise typer.Exit(code=1)
 
 
@@ -1137,58 +1365,6 @@ def list_portfolios() -> None:
     typer.echo("  analyze --group us_portfolio_tech_growth --llm")
     typer.echo("  analyze --group us_portfolio_all_weather")
     typer.echo()
-
-
-@app.command()
-def report(
-    date: str = typer.Option(
-        None,
-        "--date",
-        "-d",
-        help="Generate report for specific date (YYYY-MM-DD format)",
-    ),
-    config: Path = typer.Option(
-        None,
-        "--config",
-        "-c",
-        help="Path to configuration file",
-        exists=True,
-    ),
-) -> None:
-    """Generate report from cached data.
-
-    Creates a report for a specific date using previously cached data,
-    without fetching new data from APIs.
-    """
-    try:
-        # Load configuration
-        config_obj = load_config(config)
-
-        # Setup logging
-        setup_logging(config_obj.logging)
-
-        logger.debug(f"Generating report for date: {date}")
-
-        typer.echo("✓ Report configuration loaded")
-        if date:
-            typer.echo(f"  Date: {date}")
-        typer.echo(f"  Format: {config_obj.output.report_format}")
-
-        # Phase 4+ implementation will add actual report generation here
-        logger.debug("Report generation completed successfully")
-
-    except FileNotFoundError as e:
-        logger.error(f"Configuration error: {e}")
-        typer.echo(f"❌ Error: {e}", err=True)
-        raise typer.Exit(code=1)
-    except ValueError as e:
-        logger.error(f"Configuration validation error: {e}")
-        typer.echo(f"❌ Configuration error: {e}", err=True)
-        raise typer.Exit(code=1)
-    except Exception as e:
-        logger.exception(f"Unexpected error during report generation: {e}")
-        typer.echo(f"❌ Error: {e}", err=True)
-        raise typer.Exit(code=1)
 
 
 @app.command()
