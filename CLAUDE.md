@@ -58,6 +58,34 @@ uv run python -m src.main analyze --market us --limit 20
 uv run python -m src.main analyze --group us_tech_software
 ```
 
+**Note**: When database is enabled (default), all analysis runs automatically:
+- Create a run session to track the analysis
+- Store investment signals immediately after creation (non-blocking)
+- Enable partial report generation even if some tickers fail
+- Track analysis metadata (mode, tickers, timestamps, status)
+
+### Report Generation Commands
+
+```bash
+# Generate report from a specific analysis session (using session ID)
+uv run python -m src.main report --session-id 1
+
+# Generate report for all signals from a specific date
+uv run python -m src.main report --date 2025-12-04
+
+# Generate JSON report instead of markdown
+uv run python -m src.main report --session-id 1 --format json
+
+# Preview report without saving to file
+uv run python -m src.main report --session-id 1 --no-save
+```
+
+**Database Benefits**:
+- ✅ Reports generated even when some tickers fail (partial results saved)
+- ✅ Historical report regeneration from stored data
+- ✅ Audit trail of all analysis runs
+- ✅ Foundation for performance tracking
+
 ### Project Configuration
 
 ```bash
@@ -91,7 +119,15 @@ Analysis Mode Selection (--llm flag)
         ├─ Fundamental Metrics (P/E, EV/EBITDA, margins)
         └─ Signal Scoring (weighted combination)
     ↓
+Database Storage (SQLite) ← Immediate signal persistence
+    ├─ Run Sessions (track each analysis run)
+    ├─ Recommendations (investment signals)
+    ├─ Price Tracking (performance monitoring)
+    └─ Analyst Ratings (historical data)
+    ↓
 Report Generation (Markdown/JSON)
+    ├─ From in-memory signals (during analysis)
+    └─ From database (historical regeneration)
     ↓
 Output (Files, Terminal, Cost Summary)
 ```
@@ -118,18 +154,29 @@ Output (Files, Terminal, Cost Summary)
   - Financial statements: 7 days
 - Minimizes API calls and costs
 
-**4. Analysis Modules (src/analysis/)**
+**4. Database Layer (src/data/db.py, src/data/repository.py)**
+- SQLite database (`data/nordinvest.db`) for persistent storage
+- **Auto-incrementing INTEGER primary keys** (migrated from UUID for performance)
+- Repository pattern for data access with session management
+- **Run Sessions**: Track each analysis run with metadata (mode, tickers, status, timestamps)
+- **Recommendations**: Store investment signals immediately after creation
+- **Price Tracking**: Monitor recommendation performance over time
+- **Analyst Ratings**: Accumulate historical analyst data (APIs only provide 3 months)
+- Non-blocking storage: DB failures logged as warnings, don't halt analysis
+- Enables partial report generation when some tickers fail
+
+**5. Analysis Modules (src/analysis/)**
 - Technical Analysis: Moving averages, RSI, MACD, ATR, volume analysis
 - Fundamental Analysis: Earnings growth, margins, debt ratios, valuation metrics
 - Signal Synthesis: Multi-factor scoring (35% fundamental, 35% technical, 30% sentiment)
 
-**5. LLM Integration (src/llm/)**
+**6. LLM Integration (src/llm/)**
 - Token tracking for cost monitoring
 - Prompt templates for consistent agent behavior
 - Tool adapters for CrewAI integration
 - High-level orchestrator for LLM analysis
 
-**6. Configuration System (src/config/)**
+**7. Configuration System (src/config/)**
 - YAML-based configuration for market preferences, risk tolerance, capital settings
 - LLM configuration (provider, model, temperature)
 - Environment variable support for API credentials
