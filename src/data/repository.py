@@ -8,12 +8,13 @@ from datetime import date, datetime
 from pathlib import Path
 
 from loguru import logger
-from sqlmodel import select
+from sqlmodel import and_, select
 
 from src.data.db import DatabaseManager
 from src.data.models import (
     AnalystData,
     AnalystRating,
+    PerformanceSummary,
     PriceTracking,
     Recommendation,
     RunSession,
@@ -778,11 +779,12 @@ class RecommendationsRepository:
             logger.error(f"Error retrieving recommendations for session {run_session_id}: {e}")
             return []
 
-    def get_recommendations_by_date(self, analysis_date: date | str) -> list:
-        """Get all recommendations for a specific analysis date.
+    def get_recommendations_by_date(self, report_date: date | str) -> list:
+        """Get all recommendations created on a specific date for report generation.
 
         Args:
-            analysis_date: Date when analysis was performed (date object or YYYY-MM-DD string).
+            report_date: Date when report is being generated (date object or YYYY-MM-DD string).
+                        Retrieves recommendations created on this date, regardless of analysis_date.
 
         Returns:
             List of InvestmentSignal Pydantic models.
@@ -791,14 +793,15 @@ class RecommendationsRepository:
 
         try:
             # Convert string to date if needed
-            if isinstance(analysis_date, str):
-                analysis_date = datetime.strptime(analysis_date, "%Y-%m-%d").date()
+            if isinstance(report_date, str):
+                report_date = datetime.strptime(report_date, "%Y-%m-%d").date()
 
             session = self.db_manager.get_session()
             try:
+                # Filter by analysis_date
                 recommendations = session.exec(
                     select(Recommendation)
-                    .where(Recommendation.analysis_date == analysis_date)
+                    .where(Recommendation.analysis_date == report_date)
                     .order_by(Recommendation.created_at)
                 ).all()
 
@@ -809,7 +812,7 @@ class RecommendationsRepository:
                 session.close()
 
         except Exception as e:
-            logger.error(f"Error retrieving recommendations for date {analysis_date}: {e}")
+            logger.error(f"Error retrieving recommendations for date {report_date}: {e}")
             return []
 
     def get_latest_recommendation(self, ticker: str) -> Recommendation | None:
@@ -850,7 +853,8 @@ class RecommendationsRepository:
 class PerformanceRepository:
     """Repository for tracking recommendation performance.
 
-    Basic implementation for storing price tracking data and performance metrics.
+    Provides methods for storing price tracking data, calculating performance metrics,
+    and generating performance reports.
     """
 
     def __init__(self, db_path: Path | str = "data/nordinvest.db"):
@@ -864,20 +868,18 @@ class PerformanceRepository:
 
     def track_price(
         self,
-        recommendation_id: str,
+        recommendation_id: int,
         tracking_date: date,
         price: float,
-        days_since_recommendation: int,
         benchmark_price: float | None = None,
         benchmark_ticker: str = "SPY",
     ) -> bool:
         """Record price at specific date for performance tracking.
 
         Args:
-            recommendation_id: UUID of the recommendation.
+            recommendation_id: Integer ID of the recommendation.
             tracking_date: Date when price was tracked.
             price: Stock price on tracking date.
-            days_since_recommendation: Number of days since recommendation.
             benchmark_price: Benchmark price on tracking date.
             benchmark_ticker: Benchmark ticker symbol (default: SPY).
 
@@ -896,6 +898,9 @@ class PerformanceRepository:
                     logger.warning(f"Recommendation not found: {recommendation_id}")
                     return False
 
+                # Calculate days since recommendation
+                days_since = (tracking_date - recommendation.analysis_date).days
+
                 # Calculate price change percentage
                 price_change_pct = (
                     ((price - recommendation.current_price) / recommendation.current_price) * 100
@@ -903,14 +908,22 @@ class PerformanceRepository:
                     else None
                 )
 
+                # Get initial benchmark price from first tracking record or store it
+                initial_benchmark = self._get_initial_benchmark_price(
+                    session, recommendation_id, benchmark_price, benchmark_ticker
+                )
+
                 # Calculate benchmark change percentage
                 benchmark_change_pct = None
                 alpha = None
-                if benchmark_price and price_change_pct is not None:
-                    # Note: Need to store initial benchmark price in recommendation for accurate calculation
-                    # This is a simplified version
-                    benchmark_change_pct = 0.0  # Placeholder
-                    alpha = price_change_pct - benchmark_change_pct
+                if benchmark_price and initial_benchmark:
+                    benchmark_change_pct = (
+                        ((benchmark_price - initial_benchmark) / initial_benchmark) * 100
+                        if initial_benchmark > 0
+                        else None
+                    )
+                    if price_change_pct is not None and benchmark_change_pct is not None:
+                        alpha = price_change_pct - benchmark_change_pct
 
                 # Check if tracking record exists (upsert pattern)
                 existing = session.exec(
@@ -924,6 +937,7 @@ class PerformanceRepository:
                     # Update existing
                     existing.price = price
                     existing.price_change_pct = price_change_pct
+                    existing.days_since_recommendation = days_since
                     existing.benchmark_price = benchmark_price
                     existing.benchmark_change_pct = benchmark_change_pct
                     existing.alpha = alpha
@@ -933,7 +947,7 @@ class PerformanceRepository:
                     price_tracking = PriceTracking(
                         recommendation_id=recommendation_id,
                         tracking_date=tracking_date,
-                        days_since_recommendation=days_since_recommendation,
+                        days_since_recommendation=days_since,
                         price=price,
                         price_change_pct=price_change_pct,
                         benchmark_ticker=benchmark_ticker,
@@ -956,11 +970,41 @@ class PerformanceRepository:
             logger.error(f"Error tracking price for recommendation {recommendation_id}: {e}")
             return False
 
-    def get_performance_data(self, recommendation_id: str) -> list[PriceTracking]:
+    def _get_initial_benchmark_price(
+        self, session, recommendation_id: int, current_benchmark_price: float | None, ticker: str
+    ) -> float | None:
+        """Get initial benchmark price at time of recommendation.
+
+        Looks for the earliest price tracking record to get the baseline benchmark price.
+        If this is the first tracking, uses the current benchmark price as baseline.
+
+        Args:
+            session: Database session.
+            recommendation_id: ID of the recommendation.
+            current_benchmark_price: Current benchmark price.
+            ticker: Benchmark ticker symbol.
+
+        Returns:
+            Initial benchmark price or None.
+        """
+        # Get the earliest tracking record for this recommendation
+        earliest = session.exec(
+            select(PriceTracking)
+            .where(PriceTracking.recommendation_id == recommendation_id)
+            .order_by(PriceTracking.tracking_date.asc())
+        ).first()
+
+        if earliest and earliest.benchmark_price:
+            return earliest.benchmark_price
+
+        # If no existing tracking or no benchmark price, use current as baseline
+        return current_benchmark_price
+
+    def get_performance_data(self, recommendation_id: int) -> list[PriceTracking]:
         """Get all price tracking data for a recommendation.
 
         Args:
-            recommendation_id: UUID of the recommendation.
+            recommendation_id: Integer ID of the recommendation.
 
         Returns:
             List of PriceTracking objects.
@@ -982,3 +1026,321 @@ class PerformanceRepository:
         except Exception as e:
             logger.error(f"Error retrieving performance data for {recommendation_id}: {e}")
             return []
+
+    def get_active_recommendations(
+        self, max_age_days: int = 180, signal_types: list[str] | None = None
+    ) -> list[Recommendation]:
+        """Get active recommendations that should be tracked.
+
+        Args:
+            max_age_days: Maximum age of recommendations to track (default: 180 days).
+            signal_types: Filter by signal types (e.g., ['buy', 'strong_buy']).
+
+        Returns:
+            List of Recommendation objects.
+        """
+        try:
+            session = self.db_manager.get_session()
+            try:
+                # Calculate cutoff date
+                from datetime import timedelta
+
+                from sqlmodel import select
+
+                cutoff_date = date.today() - timedelta(days=max_age_days)
+
+                # Build query with eager loading of ticker relationship
+                query = (
+                    select(Recommendation)
+                    .join(Ticker)
+                    .where(Recommendation.analysis_date >= cutoff_date)
+                )
+
+                if signal_types:
+                    query = query.where(Recommendation.signal_type.in_(signal_types))
+
+                recommendations = session.exec(query).all()
+
+                # Force load the ticker_obj relationship before closing session
+                for rec in recommendations:
+                    _ = rec.ticker_obj.symbol  # Access to force load
+
+                return list(recommendations)
+
+            finally:
+                session.close()
+
+        except Exception as e:
+            logger.error(f"Error retrieving active recommendations: {e}")
+            return []
+
+    def update_performance_summary(
+        self,
+        ticker_id: int | None = None,
+        signal_type: str | None = None,
+        analysis_mode: str | None = None,
+        period_days: int = 30,
+    ) -> bool:
+        """Calculate and store aggregated performance metrics.
+
+        Args:
+            ticker_id: Filter by ticker ID (None for overall summary).
+            signal_type: Filter by signal type (None for all signals).
+            analysis_mode: Filter by analysis mode (None for all modes).
+            period_days: Tracking period in days (7, 30, 90, 180).
+
+        Returns:
+            True if successful, False otherwise.
+        """
+        try:
+            session = self.db_manager.get_session()
+            try:
+                # Build query to get recommendations and their tracking data
+                from datetime import timedelta
+
+                cutoff_date = date.today() - timedelta(days=period_days)
+
+                # Base query for recommendations
+                query = select(Recommendation).where(Recommendation.analysis_date >= cutoff_date)
+
+                if ticker_id:
+                    query = query.where(Recommendation.ticker_id == ticker_id)
+                if signal_type:
+                    query = query.where(Recommendation.signal_type == signal_type)
+                if analysis_mode:
+                    query = query.where(Recommendation.analysis_mode == analysis_mode)
+
+                recommendations = session.exec(query).all()
+
+                if not recommendations:
+                    logger.info("No recommendations found for performance summary")
+                    return True
+
+                # Collect performance metrics
+                returns = []
+                alphas = []
+                confidences = []
+                wins = 0
+
+                for rec in recommendations:
+                    # Get latest tracking data for this recommendation
+                    latest_tracking = session.exec(
+                        select(PriceTracking)
+                        .where(PriceTracking.recommendation_id == rec.id)
+                        .order_by(PriceTracking.tracking_date.desc())
+                    ).first()
+
+                    if latest_tracking and latest_tracking.price_change_pct is not None:
+                        returns.append(latest_tracking.price_change_pct)
+                        if latest_tracking.price_change_pct > 0:
+                            wins += 1
+                        if latest_tracking.alpha is not None:
+                            alphas.append(latest_tracking.alpha)
+
+                    confidences.append(rec.confidence)
+
+                # Calculate metrics
+                import statistics
+
+                total_recommendations = len(recommendations)
+                avg_return = statistics.mean(returns) if returns else None
+                median_return = statistics.median(returns) if returns else None
+                win_rate = (wins / len(returns) * 100) if returns else None
+                avg_alpha = statistics.mean(alphas) if alphas else None
+
+                # Sharpe ratio (simplified - assumes risk-free rate of 0)
+                sharpe_ratio = None
+                if returns and len(returns) > 1:
+                    std_dev = statistics.stdev(returns)
+                    sharpe_ratio = (avg_return / std_dev) if std_dev > 0 else None
+
+                # Max drawdown (simplified)
+                max_drawdown = min(returns) if returns else None
+
+                # Confidence calibration
+                avg_confidence = statistics.mean(confidences) if confidences else None
+                actual_win_rate = win_rate
+                calibration_error = (
+                    abs(avg_confidence - actual_win_rate)
+                    if avg_confidence and actual_win_rate
+                    else None
+                )
+
+                # Store or update summary
+                # Build WHERE conditions - handle NULL properly
+                where_conditions = [PerformanceSummary.period_days == period_days]
+
+                if ticker_id is not None:
+                    where_conditions.append(PerformanceSummary.ticker_id == ticker_id)
+                else:
+                    where_conditions.append(PerformanceSummary.ticker_id.is_(None))
+
+                if signal_type is not None:
+                    where_conditions.append(PerformanceSummary.signal_type == signal_type)
+                else:
+                    where_conditions.append(PerformanceSummary.signal_type.is_(None))
+
+                if analysis_mode is not None:
+                    where_conditions.append(PerformanceSummary.analysis_mode == analysis_mode)
+                else:
+                    where_conditions.append(PerformanceSummary.analysis_mode.is_(None))
+
+                existing = session.exec(
+                    select(PerformanceSummary).where(and_(*where_conditions))
+                ).first()
+
+                if existing:
+                    # Update
+                    existing.total_recommendations = total_recommendations
+                    existing.avg_return = avg_return
+                    existing.median_return = median_return
+                    existing.win_rate = win_rate
+                    existing.avg_alpha = avg_alpha
+                    existing.sharpe_ratio = sharpe_ratio
+                    existing.max_drawdown = max_drawdown
+                    existing.avg_confidence = avg_confidence
+                    existing.actual_win_rate = actual_win_rate
+                    existing.calibration_error = calibration_error
+                    existing.updated_at = datetime.now()
+                    session.add(existing)
+                else:
+                    # Create new
+                    summary = PerformanceSummary(
+                        ticker_id=ticker_id,
+                        signal_type=signal_type,
+                        analysis_mode=analysis_mode,
+                        period_days=period_days,
+                        total_recommendations=total_recommendations,
+                        avg_return=avg_return,
+                        median_return=median_return,
+                        win_rate=win_rate,
+                        avg_alpha=avg_alpha,
+                        sharpe_ratio=sharpe_ratio,
+                        max_drawdown=max_drawdown,
+                        avg_confidence=avg_confidence,
+                        actual_win_rate=actual_win_rate,
+                        calibration_error=calibration_error,
+                    )
+                    session.add(summary)
+
+                session.commit()
+                logger.info(f"Updated performance summary for period: {period_days} days")
+                return True
+
+            finally:
+                session.close()
+
+        except Exception as e:
+            logger.error(f"Error updating performance summary: {e}")
+            return False
+
+    def get_performance_report(
+        self,
+        ticker_symbol: str | None = None,
+        signal_type: str | None = None,
+        analysis_mode: str | None = None,
+        period_days: int = 30,
+    ) -> dict:
+        """Generate performance report with statistics.
+
+        Args:
+            ticker_symbol: Filter by ticker symbol (None for all tickers).
+            signal_type: Filter by signal type (None for all signals).
+            analysis_mode: Filter by analysis mode (None for all modes).
+            period_days: Tracking period in days.
+
+        Returns:
+            Dictionary with performance statistics.
+        """
+        try:
+            session = self.db_manager.get_session()
+            try:
+                # Get ticker ID if symbol provided
+                ticker_id = None
+                if ticker_symbol:
+                    ticker = session.exec(
+                        select(Ticker).where(Ticker.symbol == ticker_symbol.upper())
+                    ).first()
+                    if ticker:
+                        ticker_id = ticker.id
+                    else:
+                        logger.warning(f"Ticker not found: {ticker_symbol}")
+                        return {}
+
+                # Get performance summary
+                query = select(PerformanceSummary).where(
+                    PerformanceSummary.period_days == period_days
+                )
+
+                if ticker_id:
+                    query = query.where(PerformanceSummary.ticker_id == ticker_id)
+                if signal_type:
+                    query = query.where(PerformanceSummary.signal_type == signal_type)
+                if analysis_mode:
+                    query = query.where(PerformanceSummary.analysis_mode == analysis_mode)
+
+                summaries = session.exec(query).all()
+
+                if not summaries:
+                    return {
+                        "period_days": period_days,
+                        "ticker": ticker_symbol,
+                        "signal_type": signal_type,
+                        "analysis_mode": analysis_mode,
+                        "message": "No performance data available",
+                    }
+
+                # Aggregate if multiple summaries
+                report = {
+                    "period_days": period_days,
+                    "ticker": ticker_symbol,
+                    "signal_type": signal_type,
+                    "analysis_mode": analysis_mode,
+                    "total_recommendations": sum(s.total_recommendations for s in summaries),
+                }
+
+                # Safely aggregate metrics (handle None values)
+                avg_returns = [s.avg_return for s in summaries if s.avg_return is not None]
+                report["avg_return"] = sum(avg_returns) / len(avg_returns) if avg_returns else None
+
+                median_returns = [s.median_return for s in summaries if s.median_return is not None]
+                report["median_return"] = (
+                    sum(median_returns) / len(median_returns) if median_returns else None
+                )
+
+                win_rates = [s.win_rate for s in summaries if s.win_rate is not None]
+                report["win_rate"] = sum(win_rates) / len(win_rates) if win_rates else None
+
+                alphas = [s.avg_alpha for s in summaries if s.avg_alpha is not None]
+                report["avg_alpha"] = sum(alphas) / len(alphas) if alphas else None
+
+                sharpe_ratios = [s.sharpe_ratio for s in summaries if s.sharpe_ratio is not None]
+                report["sharpe_ratio"] = (
+                    sum(sharpe_ratios) / len(sharpe_ratios) if sharpe_ratios else None
+                )
+
+                drawdowns = [s.max_drawdown for s in summaries if s.max_drawdown is not None]
+                report["max_drawdown"] = min(drawdowns) if drawdowns else None
+
+                confidences = [s.avg_confidence for s in summaries if s.avg_confidence is not None]
+                report["avg_confidence"] = (
+                    sum(confidences) / len(confidences) if confidences else None
+                )
+
+                calibration_errors = [
+                    s.calibration_error for s in summaries if s.calibration_error is not None
+                ]
+                report["calibration_error"] = (
+                    sum(calibration_errors) / len(calibration_errors)
+                    if calibration_errors
+                    else None
+                )
+
+                return report
+
+            finally:
+                session.close()
+
+        except Exception as e:
+            logger.error(f"Error generating performance report: {e}")
+            return {}
