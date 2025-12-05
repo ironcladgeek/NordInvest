@@ -40,6 +40,14 @@ line-length = 100
 [tool.ruff.lint]
 # Ignore logging f-string interpolation warning (G004)
 ignore = ["G004"]
+select = [
+  "F",        # Pyflakes (unused stuff)
+  "E", "W",   # Pycodestyle
+  "B",        # Bugbear
+  "I",        # Import sorting
+  "ARG",      # Unused arguments
+  "PLC0415",  # Import outside top-level (INLINE IMPORTS)
+]
 
 [tool.pytest.ini_options]
 markers = [
