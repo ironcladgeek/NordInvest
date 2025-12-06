@@ -411,9 +411,13 @@ class AnalysisResultNormalizer:
     @staticmethod
     def _extract_sentiment_rule_based(sent_data: dict[str, Any]) -> AnalysisComponentResult:
         """Extract sentiment analysis component from rule-based output."""
+        # Extract raw sentiment score (-1 to 1) from sentiment_metrics
+        sentiment_metrics = sent_data.get("sentiment_metrics", {})
+        raw_sentiment_score = sentiment_metrics.get("avg_sentiment")  # -1 to 1
+
         sentiment_info = SentimentInfo(
             news_count=sent_data.get("news_count"),
-            sentiment_score=sent_data.get("sentiment_score"),
+            sentiment_score=raw_sentiment_score,  # -1 to 1 from sentiment_metrics
             positive_news=sent_data.get("positive_news"),
             negative_news=sent_data.get("negative_news"),
             neutral_news=sent_data.get("neutral_news"),
@@ -421,7 +425,7 @@ class AnalysisResultNormalizer:
 
         return AnalysisComponentResult(
             component="sentiment",
-            score=sent_data.get("sentiment_score", 50.0),
+            score=sent_data.get("sentiment_score", 50.0),  # Component score 0-100
             raw_data=sent_data,
             sentiment_info=sentiment_info,
             reasoning=sent_data.get("analysis"),

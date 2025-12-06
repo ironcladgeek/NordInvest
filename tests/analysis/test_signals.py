@@ -5,6 +5,8 @@ from datetime import datetime
 import pytest
 
 from src.analysis import ComponentScores, InvestmentSignal, RiskAssessment, RiskLevel
+from src.analysis.normalizer import AnalysisResultNormalizer
+from src.analysis.signal_creator import SignalCreator
 from src.cache.manager import CacheManager
 from src.pipeline import AnalysisPipeline
 
@@ -32,7 +34,7 @@ class TestSignalSynthesis:
         }
 
     def test_create_investment_signal(self, config, cache_manager):
-        """Test signal creation from analysis data."""
+        """Test signal creation from analysis data using new unified approach."""
         try:
             pipeline = AnalysisPipeline(config, cache_manager)
         except ValueError as e:
@@ -50,32 +52,54 @@ class TestSignalSynthesis:
             "analysis": {
                 "technical": {"technical_score": 80},
                 "fundamental": {"fundamental_score": 70},
-                "sentiment": {"sentiment_score": 75},
+                "sentiment": {
+                    "sentiment_score": 75,  # Component score (0-100)
+                    "sentiment_metrics": {
+                        "avg_sentiment": 0.5,  # Raw sentiment (-1 to 1)
+                        "sentiment_direction": "positive",
+                        "count": 10,
+                    },
+                    "news_count": 10,
+                    "positive_news": 6,
+                    "negative_news": 2,
+                    "neutral_news": 2,
+                },
                 "synthesis": {"component_scores": {}},
             },
         }
         portfolio_context = {}
 
         # Mock the cache to return a price (required after bug fix)
-        from unittest.mock import Mock
+        from unittest.mock import Mock, patch
 
         mock_price = Mock()
         mock_price.close_price = 100.0
         mock_price.currency = "USD"
 
-        # Patch get_latest_price to return mock price
-        with pytest.MonkeyPatch.context() as m:
-            m.setattr(cache_manager, "get_latest_price", lambda ticker: mock_price)
+        # Use new unified approach: normalize -> create signal
+        unified_result = AnalysisResultNormalizer.normalize_rule_based_result(analysis)
 
-            signal = pipeline._create_investment_signal(analysis, portfolio_context)
+        signal_creator = SignalCreator(
+            cache_manager=cache_manager,
+            provider_manager=None,
+            risk_assessor=pipeline.risk_assessor,
+        )
 
-            assert signal is not None
-            assert signal.ticker == "TEST"
-            assert signal.final_score == 75
-            assert signal.confidence == 80
-            assert signal.recommendation == "buy"
-            assert signal.risk is not None
-            assert signal.current_price == 100.0
+        # Patch the cache manager's get_latest_price method
+        with patch.object(cache_manager, "get_latest_price", return_value=mock_price):
+            signal = signal_creator.create_signal(
+                result=unified_result,
+                portfolio_context=portfolio_context,
+                analysis_date=None,
+            )
+
+        assert signal is not None
+        assert signal.ticker == "TEST"
+        assert signal.final_score == 75
+        assert signal.confidence == 80
+        assert signal.recommendation == "buy"
+        assert signal.risk is not None
+        assert signal.current_price == 100.0
 
     def test_signal_to_dict_conversion(self):
         """Test conversion of signal to dictionary."""
