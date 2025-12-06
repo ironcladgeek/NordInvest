@@ -12,6 +12,7 @@ from src.analysis import (
     RiskAssessor,
 )
 from src.analysis.metadata_extractor import extract_analysis_metadata
+from src.analysis.normalizer import AnalysisResultNormalizer
 from src.cache.manager import CacheManager
 from src.data.portfolio import PortfolioState
 from src.data.provider_manager import ProviderManager
@@ -124,12 +125,28 @@ class AnalysisPipeline:
 
             analysis_results = scan_result.get("analysis_results", [])
 
-            # Phase 2: Convert to signals with risk assessment
-            logger.debug("Phase 2: Assessing risks and creating signals")
+            # Phase 2: Normalize results and create signals with risk assessment
+            logger.debug("Phase 2: Normalizing analysis results and creating signals")
             portfolio_context = self.portfolio_manager.to_dict() if self.portfolio_manager else {}
 
             for analysis in analysis_results:
-                signal = self._create_investment_signal(analysis, portfolio_context, context)
+                # Normalize to unified structure for consistent processing
+                try:
+                    unified_result = AnalysisResultNormalizer.normalize_rule_based_result(analysis)
+                    logger.debug(f"Normalized rule-based result for {unified_result.ticker}")
+                except Exception as e:
+                    ticker = analysis.get("ticker", "UNKNOWN")
+                    logger.warning(f"Failed to normalize analysis for {ticker}: {e}")
+                    # Fall back to old path if normalization fails
+                    unified_result = None
+
+                # Create signal (temporarily using old method, will switch to SignalCreator in Phase 7)
+                if unified_result:
+                    # TODO: Phase 7 - use SignalCreator here
+                    signal = self._create_investment_signal(analysis, portfolio_context, context)
+                else:
+                    signal = self._create_investment_signal(analysis, portfolio_context, context)
+
                 if signal:
                     signals.append(signal)
 
