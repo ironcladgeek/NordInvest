@@ -66,6 +66,14 @@ class TestSignalSynthesis:
                 },
                 "synthesis": {"component_scores": {}},
             },
+            "risk_assessment": {
+                "level": "medium",
+                "volatility": "normal",
+                "volatility_pct": 2.0,
+                "liquidity": "highly_liquid",
+                "concentration_risk": False,
+                "flags": [],
+            },
         }
         portfolio_context = {}
 
