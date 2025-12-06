@@ -45,16 +45,7 @@ class AnalysisResultNormalizer:
         """
         logger.debug(f"Normalizing LLM results for {ticker}")
 
-        # Extract technical component (detailed indicators from agent output, not synthesis)
-        technical = AnalysisResultNormalizer._extract_technical_llm(technical_result)
-
-        # Extract fundamental component
-        fundamental = AnalysisResultNormalizer._extract_fundamental_llm(fundamental_result)
-
-        # Extract sentiment component
-        sentiment = AnalysisResultNormalizer._extract_sentiment_llm(sentiment_result)
-
-        # Extract synthesis data
+        # Extract synthesis data first to get the actual scores
         synthesis_data = synthesis_result.get("result", {})
         if hasattr(synthesis_data, "raw"):
             synthesis_data = synthesis_data.raw
@@ -62,19 +53,46 @@ class AnalysisResultNormalizer:
         # Convert string to dict
         if isinstance(synthesis_data, str):
             import json
+            import re
 
             try:
-                synthesis_data = json.loads(synthesis_data)
+                # Strip markdown code fences if present (```json ... ```)
+                synthesis_str = synthesis_data.strip()
+                if synthesis_str.startswith("```"):
+                    # Remove code fences
+                    synthesis_str = re.sub(r"^```(?:json)?\n?", "", synthesis_str)
+                    synthesis_str = re.sub(r"\n?```$", "", synthesis_str)
+                    synthesis_str = synthesis_str.strip()
+
+                synthesis_data = json.loads(synthesis_str)
                 # Ensure result is a dict
                 if not isinstance(synthesis_data, dict):
                     synthesis_data = {}
-            except json.JSONDecodeError:
-                logger.warning(f"Failed to parse synthesis result for {ticker}")
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse synthesis result for {ticker}: {e}")
                 synthesis_data = {}
 
         # Ensure we have a dict
         if not isinstance(synthesis_data, dict):
             synthesis_data = {}
+
+        # Extract scores from synthesis (LLM agents return markdown, synthesis has parsed scores)
+        scores_data = synthesis_data.get("scores", {})
+        technical_score = scores_data.get("technical", 50.0)
+        fundamental_score = scores_data.get("fundamental", 50.0)
+        sentiment_score = scores_data.get("sentiment", 50.0)
+
+        # Extract technical component and override score with synthesis
+        technical = AnalysisResultNormalizer._extract_technical_llm(technical_result)
+        technical = technical.model_copy(update={"score": technical_score})
+
+        # Extract fundamental component and override score with synthesis
+        fundamental = AnalysisResultNormalizer._extract_fundamental_llm(fundamental_result)
+        fundamental = fundamental.model_copy(update={"score": fundamental_score})
+
+        # Extract sentiment component and override score with synthesis
+        sentiment = AnalysisResultNormalizer._extract_sentiment_llm(sentiment_result)
+        sentiment = sentiment.model_copy(update={"score": sentiment_score})
 
         # Extract risk assessment from synthesis
         risk_data = synthesis_data.get("risk", {})
