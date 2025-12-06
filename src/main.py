@@ -414,6 +414,18 @@ def _create_signal_from_llm_result(
         if current_price is None:
             current_price = 0.0
 
+        # Parse scores with None-safe defaults
+        scores_dict = llm_result.get("scores", {})
+        if not isinstance(scores_dict, dict):
+            scores_dict = {}
+
+        # Ensure all score values are valid floats (handle None values)
+        safe_scores = {
+            "technical": scores_dict.get("technical") or 50.0,
+            "fundamental": scores_dict.get("fundamental") or 50.0,
+            "sentiment": scores_dict.get("sentiment") or 50.0,
+        }
+
         signal = InvestmentSignal(
             ticker=ticker,
             name=llm_result.get("name", ticker),
@@ -421,16 +433,7 @@ def _create_signal_from_llm_result(
             sector=llm_result.get("sector"),
             current_price=current_price,
             currency=currency,
-            scores=ComponentScores(
-                **llm_result.get(
-                    "scores",
-                    {
-                        "technical": 50,
-                        "fundamental": 50,
-                        "sentiment": 50,
-                    },
-                )
-            ),
+            scores=ComponentScores(**safe_scores),
             final_score=llm_result.get("final_score", 50.0),
             recommendation=recommendation,
             confidence=llm_result.get("confidence", 50.0),
