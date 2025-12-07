@@ -83,7 +83,13 @@ class AnalysisResultNormalizer:
         sentiment_score = scores_data.get("sentiment", 50.0)
 
         # Extract technical component and override score with synthesis
-        technical = AnalysisResultNormalizer._extract_technical_llm(technical_result)
+        # Note: Technical indicators may be in fundamental_result if technical agent didn't complete
+        technical = AnalysisResultNormalizer._extract_technical_llm(
+            technical_result,
+            fallback_text=fundamental_result.get("result", {}).get("raw", "")
+            if isinstance(fundamental_result, dict)
+            else str(fundamental_result),
+        )
         technical = technical.model_copy(update={"score": technical_score})
 
         # Extract fundamental component and override score with synthesis
@@ -199,11 +205,110 @@ class AnalysisResultNormalizer:
         )
 
     @staticmethod
-    def _extract_technical_llm(tech_result: dict[str, Any]) -> AnalysisComponentResult:
-        """Extract technical analysis component from LLM output."""
+    def _parse_llm_markdown_for_indicators(text: str) -> dict[str, Any]:
+        """Parse LLM markdown text to extract technical indicators.
+
+        LLM agents return unstructured markdown text. This method uses regex
+        to extract key metrics that are mentioned in the text.
+        """
+        import re
+
+        indicators = {}
+
+        # Extract RSI (e.g., "RSI at 80.80" or "RSI: 80.80")
+        rsi_match = re.search(r"RSI\s+(?:at|:)?\s*([0-9]+\.?[0-9]*)", text, re.IGNORECASE)
+        if rsi_match:
+            indicators["rsi"] = float(rsi_match.group(1))
+
+        # Extract MACD histogram (e.g., "histogram of 2.84" or "histogram: 2.84")
+        macd_hist_match = re.search(
+            r"histogram\s+(?:of|:)?\s*([0-9]+\.?[0-9]*)", text, re.IGNORECASE
+        )
+        if macd_hist_match:
+            indicators["macd"] = float(macd_hist_match.group(1))
+
+        # Extract ATR (e.g., "ATR of 6.59" or "ATR: 6.59")
+        atr_match = re.search(r"ATR\s+(?:of|:)?\s*([0-9]+\.?[0-9]*)", text, re.IGNORECASE)
+        if atr_match:
+            indicators["atr"] = float(atr_match.group(1))
+
+        # Extract volume ratio (e.g., "volume ratio of 0.84")
+        vol_match = re.search(r"volume ratio\s+(?:of|:)?\s*([0-9]+\.?[0-9]*)", text, re.IGNORECASE)
+        if vol_match:
+            indicators["volume_ratio"] = float(vol_match.group(1))
+
+        return indicators
+
+    @staticmethod
+    def _parse_llm_markdown_for_fundamentals(text: str) -> dict[str, Any]:
+        """Parse LLM markdown text to extract fundamental metrics."""
+        import re
+
+        metrics = {}
+
+        # Extract analyst consensus (e.g., "75% (15 of 20 analysts are Buy/Strong Buy)")
+        analyst_match = re.search(r"(\d+)%.*?\((\d+)\s+of\s+(\d+)\s+analysts", text, re.IGNORECASE)
+        if analyst_match:
+            metrics["analyst_consensus"] = {
+                "bullish_pct": int(analyst_match.group(1)),
+                "bullish_count": int(analyst_match.group(2)),
+                "total_analysts": int(analyst_match.group(3)),
+            }
+
+        # Extract price (e.g., "$210.49" or "Price: $210.49")
+        price_match = re.search(r"\$([0-9]+\.?[0-9]*)", text)
+        if price_match:
+            metrics["current_price"] = float(price_match.group(1))
+
+        return metrics
+
+    @staticmethod
+    def _parse_llm_markdown_for_sentiment(text: str) -> dict[str, Any]:
+        """Parse LLM markdown text to extract sentiment metrics."""
+        import re
+
+        metrics = {}
+
+        # Extract sentiment distribution (e.g., "Positive: 70% (7 out of 10)")
+        pos_match = re.search(r"Positive.*?(\d+)%.*?\((\d+)\s+out of\s+(\d+)", text, re.IGNORECASE)
+        if pos_match:
+            metrics["positive_pct"] = int(pos_match.group(1))
+            metrics["positive_count"] = int(pos_match.group(2))
+            total = int(pos_match.group(3))
+
+        neg_match = re.search(r"Negative.*?(\d+)%", text, re.IGNORECASE)
+        if neg_match:
+            metrics["negative_pct"] = int(neg_match.group(1))
+
+        # Calculate counts if we have total
+        if "positive_count" in metrics and pos_match:
+            total_articles = int(pos_match.group(3))
+            metrics["total_articles"] = total_articles
+            if "positive_pct" in metrics and "negative_pct" in metrics:
+                metrics["neutral_pct"] = 100 - metrics["positive_pct"] - metrics["negative_pct"]
+                metrics["negative_count"] = int(total_articles * metrics["negative_pct"] / 100)
+                metrics["neutral_count"] = (
+                    total_articles - metrics["positive_count"] - metrics["negative_count"]
+                )
+
+        return metrics
+
+    @staticmethod
+    def _extract_technical_llm(
+        tech_result: dict[str, Any], fallback_text: str = ""
+    ) -> AnalysisComponentResult:
+        """Extract technical analysis component from LLM output.
+
+        Args:
+            tech_result: Technical analysis result (may be incomplete)
+            fallback_text: Fallback text to parse (e.g., from fundamental analysis)
+        """
         # Handle CrewOutput objects
         if hasattr(tech_result, "raw"):
             tech_result = tech_result.raw
+
+        # Store original text for markdown parsing
+        original_text = tech_result if isinstance(tech_result, str) else ""
 
         # Convert string to dict
         if isinstance(tech_result, str):
@@ -215,6 +320,7 @@ class AnalysisResultNormalizer:
                 if not isinstance(tech_result, dict):
                     tech_result = {}
             except json.JSONDecodeError:
+                # Not JSON - will parse as markdown
                 tech_result = {}
 
         # Ensure we have a dict
@@ -225,6 +331,15 @@ class AnalysisResultNormalizer:
         # Extract and structure them
         indicators_data = tech_result.get("indicators", {})
         components_data = tech_result.get("components", {})
+
+        # If no structured data, parse from markdown (original text or fallback)
+        if not indicators_data:
+            text_to_parse = original_text or fallback_text
+            if text_to_parse:
+                parsed_indicators = AnalysisResultNormalizer._parse_llm_markdown_for_indicators(
+                    text_to_parse
+                )
+                indicators_data.update(parsed_indicators)
 
         # Extract MACD values (handle both dict and float formats)
         macd_data = indicators_data.get("macd")
@@ -263,6 +378,9 @@ class AnalysisResultNormalizer:
         if hasattr(fund_result, "raw"):
             fund_result = fund_result.raw
 
+        # Store original text for markdown parsing
+        original_text = fund_result if isinstance(fund_result, str) else ""
+
         # Convert string to dict
         if isinstance(fund_result, str):
             import json
@@ -273,6 +391,7 @@ class AnalysisResultNormalizer:
                 if not isinstance(fund_result, dict):
                     fund_result = {}
             except json.JSONDecodeError:
+                # Not JSON - will parse as markdown
                 fund_result = {}
 
         # Ensure we have a dict
@@ -281,6 +400,19 @@ class AnalysisResultNormalizer:
 
         metrics_data = fund_result.get("metrics", {})
         analyst_data = fund_result.get("analyst_ratings", {})
+
+        # If no structured data, parse from markdown
+        parsed_fundamentals = {}
+        if original_text and not metrics_data:
+            parsed_fundamentals = AnalysisResultNormalizer._parse_llm_markdown_for_fundamentals(
+                original_text
+            )
+            if "analyst_consensus" in parsed_fundamentals:
+                consensus = parsed_fundamentals["analyst_consensus"]
+                analyst_data = {
+                    "total_analysts": consensus.get("total_analysts"),
+                    "bullish_pct": consensus.get("bullish_pct"),
+                }
 
         fundamental_metrics = FundamentalMetrics(
             pe_ratio=metrics_data.get("pe_ratio"),
@@ -330,6 +462,9 @@ class AnalysisResultNormalizer:
         if hasattr(sent_result, "raw"):
             sent_result = sent_result.raw
 
+        # Store original text for markdown parsing
+        original_text = sent_result if isinstance(sent_result, str) else ""
+
         # Convert string to dict
         if isinstance(sent_result, str):
             import json
@@ -340,18 +475,28 @@ class AnalysisResultNormalizer:
                 if not isinstance(sent_result, dict):
                     sent_result = {}
             except json.JSONDecodeError:
+                # Not JSON - will parse as markdown
                 sent_result = {}
 
         # Ensure we have a dict
         if not isinstance(sent_result, dict):
             sent_result = {}
 
+        # Parse markdown if no structured data
+        parsed_sentiment = {}
+        if original_text and not sent_result.get("news_count"):
+            parsed_sentiment = AnalysisResultNormalizer._parse_llm_markdown_for_sentiment(
+                original_text
+            )
+
         sentiment_info = SentimentInfo(
-            news_count=sent_result.get("news_count"),
+            news_count=sent_result.get("news_count") or parsed_sentiment.get("total_articles"),
             sentiment_score=sent_result.get("sentiment_score"),
-            positive_news=sent_result.get("positive_news"),
-            negative_news=sent_result.get("negative_news"),
-            neutral_news=sent_result.get("neutral_news"),
+            positive_news=sent_result.get("positive_news")
+            or parsed_sentiment.get("positive_count"),
+            negative_news=sent_result.get("negative_news")
+            or parsed_sentiment.get("negative_count"),
+            neutral_news=sent_result.get("neutral_news") or parsed_sentiment.get("neutral_count"),
         )
 
         return AnalysisComponentResult(
