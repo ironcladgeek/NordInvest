@@ -46,8 +46,13 @@ class AnalysisResultNormalizer:
         logger.debug(f"Normalizing LLM results for {ticker}")
 
         # Extract synthesis data first to get the actual scores
+        # Synthesis has same structure as agent outputs: {"status": "success", "result": {"raw": "..."}}
         synthesis_data = synthesis_result.get("result", {})
-        if hasattr(synthesis_data, "raw"):
+
+        # Extract raw text from the result dict
+        if isinstance(synthesis_data, dict) and "raw" in synthesis_data:
+            synthesis_data = synthesis_data["raw"]
+        elif hasattr(synthesis_data, "raw"):
             synthesis_data = synthesis_data.raw
 
         # Convert string to dict
@@ -84,11 +89,18 @@ class AnalysisResultNormalizer:
 
         # Extract technical component and override score with synthesis
         # Note: Technical indicators may be in fundamental_result if technical agent didn't complete
+        # The result dict has structure: {"raw": "...", "pydantic": null, ...}
+        fund_text = ""
+        if isinstance(fundamental_result, dict):
+            fund_text = fundamental_result.get("raw", "")
+        elif hasattr(fundamental_result, "raw"):
+            fund_text = fundamental_result.raw
+        else:
+            fund_text = str(fundamental_result)
+
         technical = AnalysisResultNormalizer._extract_technical_llm(
             technical_result,
-            fallback_text=fundamental_result.get("result", {}).get("raw", "")
-            if isinstance(fundamental_result, dict)
-            else str(fundamental_result),
+            fallback_text=fund_text,
         )
         technical = technical.model_copy(update={"score": technical_score})
 
@@ -379,7 +391,13 @@ class AnalysisResultNormalizer:
             fund_result = fund_result.raw
 
         # Store original text for markdown parsing
-        original_text = fund_result if isinstance(fund_result, str) else ""
+        # Extract from dict if it has 'raw' key (LLM agent output format)
+        original_text = ""
+        if isinstance(fund_result, dict) and "raw" in fund_result:
+            original_text = fund_result.get("raw", "")
+            # Don't overwrite fund_result yet, we'll try to parse it as JSON first
+        elif isinstance(fund_result, str):
+            original_text = fund_result
 
         # Convert string to dict
         if isinstance(fund_result, str):
@@ -410,8 +428,8 @@ class AnalysisResultNormalizer:
             if "analyst_consensus" in parsed_fundamentals:
                 consensus = parsed_fundamentals["analyst_consensus"]
                 analyst_data = {
-                    "total_analysts": consensus.get("total_analysts"),
-                    "bullish_pct": consensus.get("bullish_pct"),
+                    "num_analysts": consensus.get("total_analysts"),  # Map to correct field name
+                    "consensus_rating": "buy" if consensus.get("bullish_pct", 0) >= 60 else "hold",
                 }
 
         fundamental_metrics = FundamentalMetrics(
@@ -463,7 +481,12 @@ class AnalysisResultNormalizer:
             sent_result = sent_result.raw
 
         # Store original text for markdown parsing
-        original_text = sent_result if isinstance(sent_result, str) else ""
+        # Extract from dict if it has 'raw' key (LLM agent output format)
+        original_text = ""
+        if isinstance(sent_result, dict) and "raw" in sent_result:
+            original_text = sent_result.get("raw", "")
+        elif isinstance(sent_result, str):
+            original_text = sent_result
 
         # Convert string to dict
         if isinstance(sent_result, str):
@@ -489,9 +512,17 @@ class AnalysisResultNormalizer:
                 original_text
             )
 
+        # Calculate sentiment_score from distribution if not provided
+        sentiment_score = sent_result.get("sentiment_score")
+        if sentiment_score is None and parsed_sentiment:
+            # Calculate from positive/negative percentages: (pos% - neg%) / 100
+            pos_pct = parsed_sentiment.get("positive_pct", 0)
+            neg_pct = parsed_sentiment.get("negative_pct", 0)
+            sentiment_score = (pos_pct - neg_pct) / 100.0  # Range: -1 to 1
+
         sentiment_info = SentimentInfo(
             news_count=sent_result.get("news_count") or parsed_sentiment.get("total_articles"),
-            sentiment_score=sent_result.get("sentiment_score"),
+            sentiment_score=sentiment_score,
             positive_news=sent_result.get("positive_news")
             or parsed_sentiment.get("positive_count"),
             negative_news=sent_result.get("negative_news")
