@@ -6,6 +6,57 @@ This roadmap outlines the implementation plan for building an AI-driven financia
 
 ---
 
+## 🎯 Core Development Principles
+
+### DRY (Don't Repeat Yourself) - MANDATORY
+
+**CRITICAL**: All development MUST follow the DRY principle to maintain code quality and reduce maintenance burden.
+
+**Definition**: Every piece of knowledge should have a single, unambiguous representation in the system.
+
+**Requirements**:
+- ✅ **Single execution path** for all analysis modes (LLM, rule-based, hybrid)
+- ✅ **Single normalization point** - no duplicate calls to normalizers
+- ✅ **Single signal creation** - one location for creating signals
+- ✅ **Single database storage** - one location for persisting data
+- ✅ **Single source of truth** for each data structure or algorithm
+
+**Current Status** (as of December 2025):
+- ❌ **VIOLATION**: Two separate execution paths exist (see Issue #1 below)
+- ❌ **VIOLATION**: Duplicate signal creation in `pipeline.py` and `main.py`
+- ❌ **VIOLATION**: Duplicate database storage in `pipeline.py` and `main.py`
+- ⚠️ **ACTION REQUIRED**: Refactoring to eliminate duplication (see [ARCHITECTURE_ANALYSIS.md](./ARCHITECTURE_ANALYSIS.md))
+
+**Why This Matters**:
+- 🐛 **Bug risk**: Bugs must be fixed in multiple places (often missed)
+- 🔧 **Maintenance**: Features require 2x changes
+- 🧪 **Testing**: Must test multiple code paths doing the same thing
+- 📚 **Complexity**: Harder to understand and onboard new developers
+- 💰 **Cost**: More time spent on maintenance vs new features
+
+**Examples of Good DRY**:
+```python
+# ✅ GOOD: Single signal creator used by both modes
+signal_creator = SignalCreator(...)
+signal = signal_creator.create_signal(result, portfolio_context, analysis_date)
+
+# ❌ BAD: Duplicate signal creation logic
+# In pipeline.py:
+signal = InvestmentSignal(ticker=result.ticker, recommendation=...)
+# In main.py:
+signal = InvestmentSignal(ticker=result.ticker, recommendation=...)  # DUPLICATE!
+```
+
+**Before Committing New Code, Ask**:
+1. Does this logic already exist elsewhere?
+2. Can I reuse an existing component instead of duplicating?
+3. Will future changes require modifying code in multiple places?
+4. Is there a single entry point for this functionality?
+
+If the answer to questions 1, 3 is YES or question 2, 4 is NO → **REFACTOR FIRST**
+
+---
+
 ## Project Timeline Overview
 
 | Phase | Duration | Focus | Status |
@@ -1506,11 +1557,30 @@ Sentiment agent output:
 
 **NOT a normalizer bug** - The normalizer and metadata extraction code work correctly when tested with properly formatted LLM outputs (verified with data from 2025-12-06 run where agents completed successfully).
 
-**Likely causes:**
-1. **Agent timeout**: Agents may be timing out before completing their analysis
+**Deep Architectural Analysis** (see [ARCHITECTURE_ANALYSIS.md](./ARCHITECTURE_ANALYSIS.md)):
+
+The system currently has **TWO SEPARATE EXECUTION PATHS** for LLM and rule-based modes, violating the DRY (Don't Repeat Yourself) principle:
+
+- **Rule-based path**: `main.py → pipeline.run_analysis() → crew.scan_and_analyze() → hybrid agents → normalize_rule_based_result()`
+- **LLM path**: `main.py → _run_llm_analysis() → LLMAnalysisOrchestrator → CrewAI agents → normalize_llm_result()`
+
+**Why metadata works in rule-based but not LLM:**
+1. **Rule-based mode**: Uses `HybridAnalysisAgent` with guaranteed rule-based fallback → always completes → metadata extracted successfully
+2. **LLM mode**: Uses pure CrewAI agents (no fallback) → agents timeout/fail to complete → no data to extract → empty metadata
+
+**Immediate causes:**
+1. **Agent timeout**: CrewAI agents may be timing out before completing their analysis
 2. **Tool execution failures**: CrewAI tools may be failing silently, causing agents to stop
 3. **Prompt configuration**: Agent prompts may need adjustment to ensure they return final analysis after tool use
-4. **CrewAI version issue**: Possible regression in CrewAI framework behavior
+4. **No fallback mechanism**: LLM mode has no fallback when agents fail (unlike rule-based mode)
+
+**DRY Violations:**
+1. Two orchestration mechanisms (`AnalysisCrew` vs `LLMAnalysisOrchestrator`)
+2. Two normalization call sites (duplicate code)
+3. Two signal creation blocks (identical code in `pipeline.py` and `main.py`)
+4. Two database storage blocks (identical try/except blocks)
+
+**Impact**: Any feature addition requires changes in 2 places, doubling maintenance burden and bug risk.
 
 #### Code Verification
 
@@ -1548,12 +1618,22 @@ The following components were verified and work correctly:
 
 #### Recommended Investigation Steps
 
+**Short-term (Fix LLM agent completion):**
 1. **Check CrewAI logs** for agent execution errors or timeouts
 2. **Review agent prompts** to ensure they explicitly require final analysis after tool use
 3. **Test tool execution** in isolation to verify they return data correctly
 4. **Check CrewAI configuration** for timeout settings
 5. **Verify LLM API** isn't rate limiting or timing out
 6. **Review agent system prompts** - they should instruct agents to synthesize findings after tool use, not just call tools
+
+**Long-term (Eliminate DRY violations):**
+1. **Refactor to single execution path**: Move LLM orchestration into `AnalysisCrew`
+2. **Consolidate normalization**: Normalize inside crew before returning (single call site)
+3. **Unify signal creation**: Keep only in `pipeline.py` (remove from `main.py`)
+4. **Unify database storage**: Keep only in `pipeline.py` (remove from `main.py`)
+5. **Add fallback to LLM mode**: Use hybrid agents as fallback when CrewAI agents fail
+
+See detailed refactoring plan in [ARCHITECTURE_ANALYSIS.md](./ARCHITECTURE_ANALYSIS.md)
 
 #### Workaround
 

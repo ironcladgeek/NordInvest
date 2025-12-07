@@ -2,6 +2,33 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 🎯 CRITICAL: DRY Principle (Don't Repeat Yourself)
+
+**MANDATORY FOR ALL DEVELOPMENT**: This project MUST follow the DRY principle rigorously.
+
+**Definition**: Every piece of knowledge should have a single, unambiguous representation in the system.
+
+**Current Status** ⚠️:
+- The system currently has **TWO SEPARATE EXECUTION PATHS** for LLM and rule-based modes (documented in `docs/ARCHITECTURE_ANALYSIS.md`)
+- This is a **KNOWN VIOLATION** that must be eliminated
+
+**Requirements for New Code**:
+1. ✅ **Single execution path** - All analysis modes must converge to one pipeline
+2. ✅ **No duplicate logic** - If code exists elsewhere, reuse it
+3. ✅ **Single source of truth** - One location for each piece of functionality
+4. ✅ **Before writing new code**, check if similar functionality already exists
+
+**Before Committing, Ask**:
+- Does this logic already exist elsewhere?
+- Can I reuse an existing component?
+- Will future changes require modifying code in multiple places?
+
+If YES to questions 1 or 3 → **REFACTOR FIRST, then add feature**
+
+See `docs/roadmap.md` and `docs/ARCHITECTURE_ANALYSIS.md` for detailed DRY violations and refactoring plan.
+
+---
+
 ## Project Overview
 
 **NordInvest** is an AI-powered financial analysis and investment recommendation system that generates daily investment signals and portfolio allocation suggestions. It uses a multi-agent CrewAI architecture to analyze global financial markets across fundamental, technical, and sentiment dimensions.
@@ -302,34 +329,45 @@ NordInvest/
 
 ## Key Development Patterns
 
+**⚠️ IMPORTANT**: Before following these patterns, check if functionality already exists. Always prefer **reusing and extending** existing code over creating duplicates.
+
 ### Creating New Agents
 
-1. Create agent class in `src/agents/`
-2. Define role, goal, backstory using clear job descriptions
-3. Assign custom tools from `src/tools/`
-4. Add to crew configuration in `src/agents/crew.py`
-5. Create hybrid wrapper if LLM fallback is needed
+1. **Check first**: Does a similar agent already exist?
+2. Create agent class in `src/agents/`
+3. Define role, goal, backstory using clear job descriptions
+4. Assign custom tools from `src/tools/`
+5. Add to crew configuration in `src/agents/crew.py`
+6. Create hybrid wrapper if LLM fallback is needed
+7. **DO NOT** create separate orchestration for LLM mode - use existing crew
 
 ### Adding New Tools
 
-1. Create tool class in `src/tools/`
-2. Inherit from `BaseTool` and implement `_run()` method
-3. Register in `ToolRegistry` for agent assignment
-4. Add CrewAI adapter in `src/llm/tools.py` if needed for LLM mode
+1. **Check first**: Does `src/tools/` already have this functionality?
+2. Create tool class in `src/tools/`
+3. Inherit from `BaseTool` and implement `_run()` method
+4. Register in `ToolRegistry` for agent assignment
+5. Add CrewAI adapter in `src/llm/tools.py` if needed for LLM mode
+6. **Ensure** the same tool works for both LLM and rule-based modes
 
 ### Data Provider Integration
 
-1. Create provider class inheriting from `DataProvider`
-2. Implement required methods: `get_price_data()`, `get_fundamentals()`, etc.
-3. Add caching integration via `CacheManager`
-4. Register in configuration for selection
+1. **Check first**: Can existing providers be extended instead?
+2. Create provider class inheriting from `DataProvider`
+3. Implement required methods: `get_price_data()`, `get_fundamentals()`, etc.
+4. Add caching integration via `CacheManager`
+5. Register in configuration for selection
+6. **Ensure** provider works identically for both analysis modes
 
-### LLM Mode Development
+### Adding New Analysis Features
 
-1. Add prompt template in `src/llm/prompts.py`
-2. Create CrewAI agent in `src/agents/crewai_agents.py`
-3. Wrap with HybridAnalysisAgent for fallback support
-4. Ensure token tracking is integrated
+**CRITICAL**: The system currently has duplicate execution paths (known issue). When adding features:
+
+1. **Check both paths**: Does the feature need to be added in two places?
+2. **If YES** → Document as DRY violation in `docs/ARCHITECTURE_ANALYSIS.md`
+3. **Prefer**: Add to `pipeline.py` (rule-based path) as the single source of truth
+4. **Avoid**: Adding feature only to LLM path (`llm/integration.py`) or vice versa
+5. **Future**: These paths will be unified - design features to work in both contexts
 
 ## Code Quality Standards
 
