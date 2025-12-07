@@ -1462,6 +1462,119 @@ Database Storage & Report Generation
 
 ---
 
+## Known Issues & Bug Reports
+
+### Issue #1: LLM Agents Not Completing Analysis (December 2025)
+
+**Status**: 🔴 **CRITICAL** - LLM mode produces incomplete data
+**Affects**: LLM mode only (rule-based mode works correctly)
+**Discovered**: 2025-12-07
+**Impact**: Reports generated in LLM mode have empty metadata tables despite correct normalizer implementation
+
+#### Problem Description
+
+When running analysis in LLM mode (`--llm` flag), the fundamental and sentiment agents are not completing their analysis tasks. They start tool execution but fail to return final analysis results.
+
+**Symptoms:**
+- Empty metadata tables in LLM-generated reports (Technical Indicators, Fundamental Metrics, Sentiment tables all empty)
+- Database stores metadata as `{"technical_indicators": {}, "fundamental_metrics": {}, "sentiment_info": {}}`
+- Agent debug files show incomplete outputs with only `<function_calls>` and no final answers
+
+**Example from latest run (2025-12-07 15:13):**
+
+```
+Fundamental agent output:
+"I'll analyze the fundamentals of KEYS by fetching real fundamental data from the available APIs.
+<function_calls>
+[{"tool_name": "Fetch Fundamental Data", "arguments": {"ticker": "KEYS"}}]
+</function_calls>"
+[AGENT STOPPED - NO FINAL ANSWER]
+
+Sentiment agent output:
+"I'll analyze the news sentiment for KEYS by fetching recent news articles...
+<function_calls>
+[{"tool_name": "Analyze Sentiment", "tool_arguments": {"ticker": "KEYS", "max_articles": 15}}]
+</function_calls>"
+[AGENT STOPPED - NO FINAL ANSWER]
+```
+
+**Comparison:**
+- ✅ **Rule-based mode**: Produces complete reports with all metadata (RSI, MACD, ATR, sentiment scores, news counts)
+- ❌ **LLM mode**: Agents fail to complete, synthesis agent makes up reasonable scores based on limited data
+
+#### Root Cause Analysis
+
+**NOT a normalizer bug** - The normalizer and metadata extraction code work correctly when tested with properly formatted LLM outputs (verified with data from 2025-12-06 run where agents completed successfully).
+
+**Likely causes:**
+1. **Agent timeout**: Agents may be timing out before completing their analysis
+2. **Tool execution failures**: CrewAI tools may be failing silently, causing agents to stop
+3. **Prompt configuration**: Agent prompts may need adjustment to ensure they return final analysis after tool use
+4. **CrewAI version issue**: Possible regression in CrewAI framework behavior
+
+#### Code Verification
+
+The following components were verified and work correctly:
+
+✅ **Normalizer** ([src/analysis/normalizer.py](../src/analysis/normalizer.py)):
+- Correctly extracts scores from synthesis JSON (65, 71, 72)
+- Parses LLM markdown to extract technical indicators (RSI, MACD, ATR)
+- Extracts analyst consensus and sentiment distribution from text
+- **Commits**: `0238149`, `f772c5f`, `211e675`
+
+✅ **Metadata Extractor** ([src/analysis/metadata_extractor.py](../src/analysis/metadata_extractor.py)):
+- `extract_metadata_from_unified_result()` correctly extracts from UnifiedAnalysisResult
+- Tested with actual LLM outputs - produces correct metadata objects
+
+✅ **Signal Creator** ([src/analysis/signal_creator.py](../src/analysis/signal_creator.py)):
+- Correctly calls metadata extraction and assigns to InvestmentSignal
+- Serialization to database works correctly
+
+#### Evidence
+
+**Test with 2025-12-06 data (agents completed):**
+```
+✅ Technical indicators: RSI 80.8, MACD 2.84, ATR 6.59
+✅ Analyst info: 20 analysts, consensus='buy'
+✅ Sentiment: 10 news, score=0.5, 7 positive/2 negative/1 neutral
+```
+
+**Test with 2025-12-07 data (agents incomplete):**
+```
+❌ Technical indicators: All None
+❌ Analyst info: None
+❌ Sentiment: All None
+```
+
+#### Recommended Investigation Steps
+
+1. **Check CrewAI logs** for agent execution errors or timeouts
+2. **Review agent prompts** to ensure they explicitly require final analysis after tool use
+3. **Test tool execution** in isolation to verify they return data correctly
+4. **Check CrewAI configuration** for timeout settings
+5. **Verify LLM API** isn't rate limiting or timing out
+6. **Review agent system prompts** - they should instruct agents to synthesize findings after tool use, not just call tools
+
+#### Workaround
+
+Use rule-based mode for production analysis until LLM agent completion issue is resolved:
+```bash
+# Use rule-based mode (works correctly)
+uv run python -m src.main analyze --ticker AAPL
+
+# LLM mode (currently produces incomplete data)
+uv run python -m src.main analyze --ticker AAPL --llm  # ⚠️ BROKEN
+```
+
+#### Related Files
+
+- Agent definitions: [src/agents/analysis.py](../src/agents/analysis.py), [src/agents/sentiment.py](../src/agents/sentiment.py)
+- CrewAI integration: [src/llm/integration.py](../src/llm/integration.py)
+- Agent prompts: [src/llm/prompts.py](../src/llm/prompts.py)
+- Debug outputs: `data/llm_debug/20251207_151317/`
+
+---
+
 ## Phase 11: Per-Agent LLM Model Configuration
 
 ### Overview - Cost Optimization
