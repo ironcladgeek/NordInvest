@@ -1,4 +1,4 @@
-"""Normalize analysis results from both LLM and rule-based modes to unified structure."""
+"""Analysis result normalizer for converting agent outputs to unified structure."""
 
 from typing import Any
 
@@ -33,99 +33,80 @@ class AnalysisResultNormalizer:
     ) -> UnifiedAnalysisResult:
         """Convert LLM agent outputs to unified structure.
 
+        With Pydantic structured output, agent results now contain validated models
+        instead of unstructured markdown. This simplifies normalization significantly.
+
         Args:
             ticker: Stock ticker symbol
-            technical_result: Technical analysis agent output (with detailed indicators)
-            fundamental_result: Fundamental analysis agent output (with detailed metrics)
-            sentiment_result: Sentiment analysis agent output (with detailed info)
-            synthesis_result: Synthesis agent output (scores + recommendation)
+            technical_result: Dict with {"status": "success", "result": TechnicalAnalysisOutput}
+            fundamental_result: Dict with {"status": "success", "result": FundamentalAnalysisOutput}
+            sentiment_result: Dict with {"status": "success", "result": SentimentAnalysisOutput}
+            synthesis_result: Dict with {"status": "success", "result": SignalSynthesisOutput}
 
         Returns:
             UnifiedAnalysisResult with all detailed metrics preserved
         """
+        # Import here to avoid circular dependency issues
+        from src.agents.output_models import (
+            FundamentalAnalysisOutput,
+            SentimentAnalysisOutput,
+            SignalSynthesisOutput,
+            TechnicalAnalysisOutput,
+        )
+
         logger.debug(f"Normalizing LLM results for {ticker}")
 
-        # Extract synthesis data first to get the actual scores
-        # Synthesis has same structure as agent outputs: {"status": "success", "result": {"raw": "..."}}
-        synthesis_data = synthesis_result.get("result", {})
-
-        # Extract raw text from the result dict
-        if isinstance(synthesis_data, dict) and "raw" in synthesis_data:
-            synthesis_data = synthesis_data["raw"]
-        elif hasattr(synthesis_data, "raw"):
-            synthesis_data = synthesis_data.raw
-
-        # Convert string to dict
-        if isinstance(synthesis_data, str):
-            import json
-            import re
-
-            try:
-                # Strip markdown code fences if present (```json ... ```)
-                synthesis_str = synthesis_data.strip()
-                if synthesis_str.startswith("```"):
-                    # Remove code fences
-                    synthesis_str = re.sub(r"^```(?:json)?\n?", "", synthesis_str)
-                    synthesis_str = re.sub(r"\n?```$", "", synthesis_str)
-                    synthesis_str = synthesis_str.strip()
-
-                synthesis_data = json.loads(synthesis_str)
-                # Ensure result is a dict
-                if not isinstance(synthesis_data, dict):
-                    synthesis_data = {}
-            except json.JSONDecodeError as e:
-                logger.warning(f"Failed to parse synthesis result for {ticker}: {e}")
-                synthesis_data = {}
-
-        # Ensure we have a dict
-        if not isinstance(synthesis_data, dict):
-            synthesis_data = {}
-
-        # Extract scores from synthesis (LLM agents return markdown, synthesis has parsed scores)
-        scores_data = synthesis_data.get("scores", {})
-        technical_score = scores_data.get("technical", 50.0)
-        fundamental_score = scores_data.get("fundamental", 50.0)
-        sentiment_score = scores_data.get("sentiment", 50.0)
-
-        # Extract technical component and override score with synthesis
-        # Note: Technical indicators may be in fundamental_result if technical agent didn't complete
-        # The result dict has structure: {"raw": "...", "pydantic": null, ...}
-        fund_text = ""
-        if isinstance(fundamental_result, dict):
-            fund_text = fundamental_result.get("raw", "")
-        elif hasattr(fundamental_result, "raw"):
-            fund_text = fundamental_result.raw
-        else:
-            fund_text = str(fundamental_result)
-
-        technical = AnalysisResultNormalizer._extract_technical_llm(
-            technical_result,
-            fallback_text=fund_text,
+        # Extract Pydantic models from result dicts
+        # CrewAI returns CrewOutput objects with .pydantic attribute containing the model
+        tech_model = AnalysisResultNormalizer._extract_pydantic_model(
+            technical_result, TechnicalAnalysisOutput
         )
-        technical = technical.model_copy(update={"score": technical_score})
+        fund_model = AnalysisResultNormalizer._extract_pydantic_model(
+            fundamental_result, FundamentalAnalysisOutput
+        )
+        sent_model = AnalysisResultNormalizer._extract_pydantic_model(
+            sentiment_result, SentimentAnalysisOutput
+        )
+        synth_model = AnalysisResultNormalizer._extract_pydantic_model(
+            synthesis_result, SignalSynthesisOutput
+        )
 
-        # Extract fundamental component and override score with synthesis
-        fundamental = AnalysisResultNormalizer._extract_fundamental_llm(fundamental_result)
-        fundamental = fundamental.model_copy(update={"score": fundamental_score})
+        # If structured output failed, fall back to markdown parsing
+        if tech_model is None:
+            logger.warning(
+                f"Technical analysis returned non-Pydantic output for {ticker}, falling back"
+            )
+            tech_model = AnalysisResultNormalizer._parse_technical_markdown(technical_result)
+        if fund_model is None:
+            logger.warning(
+                f"Fundamental analysis returned non-Pydantic output for {ticker}, falling back"
+            )
+            fund_model = AnalysisResultNormalizer._parse_fundamental_markdown(fundamental_result)
+        if sent_model is None:
+            logger.warning(
+                f"Sentiment analysis returned non-Pydantic output for {ticker}, falling back"
+            )
+            sent_model = AnalysisResultNormalizer._parse_sentiment_markdown(sentiment_result)
+        if synth_model is None:
+            logger.warning(
+                f"Signal synthesis returned non-Pydantic output for {ticker}, falling back"
+            )
+            synth_model = AnalysisResultNormalizer._parse_synthesis_markdown(synthesis_result)
 
-        # Extract sentiment component and override score with synthesis
-        sentiment = AnalysisResultNormalizer._extract_sentiment_llm(sentiment_result)
-        sentiment = sentiment.model_copy(update={"score": sentiment_score})
+        # Convert Pydantic models to component results
+        technical = AnalysisResultNormalizer._tech_model_to_component(tech_model, synth_model)
+        fundamental = AnalysisResultNormalizer._fund_model_to_component(fund_model, synth_model)
+        sentiment = AnalysisResultNormalizer._sent_model_to_component(sent_model, synth_model)
 
         # Extract risk assessment from synthesis
-        risk_data = synthesis_data.get("risk", {})
-        risk_level = (risk_data.get("level") or "medium").lower()
-        if risk_level == "moderate":
-            risk_level = "medium"
-
         risk_assessment = RiskAssessment(
-            level=risk_level,
-            volatility=risk_data.get("volatility") or "normal",
-            volatility_pct=risk_data.get("volatility_pct") or 2.0,
-            liquidity=risk_data.get("liquidity") or "normal",
-            concentration_risk=risk_data.get("concentration_risk") or False,
-            sector_risk=risk_data.get("sector_risk"),
-            flags=risk_data.get("flags") or risk_data.get("factors") or [],
+            level=synth_model.risk_level if synth_model else "medium",
+            volatility=synth_model.volatility if synth_model else "normal",
+            volatility_pct=2.0,
+            liquidity="normal",
+            concentration_risk=False,
+            sector_risk=None,
+            flags=synth_model.risk_factors if synth_model else [],
         )
 
         return UnifiedAnalysisResult(
@@ -134,19 +115,19 @@ class AnalysisResultNormalizer:
             technical=technical,
             fundamental=fundamental,
             sentiment=sentiment,
-            final_score=synthesis_data.get("final_score", 50.0),
-            recommendation=synthesis_data.get("recommendation", "hold"),
-            confidence=synthesis_data.get("confidence", 50.0),
-            company_name=synthesis_data.get("name"),
-            market=synthesis_data.get("market"),
-            sector=synthesis_data.get("sector"),
+            final_score=synth_model.final_score if synth_model else 50.0,
+            recommendation=synth_model.recommendation if synth_model else "hold",
+            confidence=synth_model.confidence if synth_model else 50.0,
+            company_name=synth_model.company_name if synth_model else None,
+            market=synth_model.market if synth_model else None,
+            sector=synth_model.sector if synth_model else None,
             risk_assessment=risk_assessment,
-            key_reasons=synthesis_data.get("key_reasons", []),
-            rationale=synthesis_data.get("rationale"),
-            caveats=synthesis_data.get("caveats", []),
-            expected_return_min=synthesis_data.get("expected_return_min", 0.0),
-            expected_return_max=synthesis_data.get("expected_return_max", 10.0),
-            time_horizon=synthesis_data.get("time_horizon", "3M"),
+            key_reasons=synth_model.key_reasons if synth_model else [],
+            rationale=synth_model.rationale if synth_model else None,
+            caveats=synth_model.caveats if synth_model else [],
+            expected_return_min=synth_model.expected_return_min if synth_model else 0.0,
+            expected_return_max=synth_model.expected_return_max if synth_model else 10.0,
+            time_horizon=synth_model.time_horizon if synth_model else "3M",
         )
 
     @staticmethod
@@ -227,25 +208,50 @@ class AnalysisResultNormalizer:
 
         indicators = {}
 
-        # Extract RSI (e.g., "RSI at 80.80" or "RSI: 80.80")
-        rsi_match = re.search(r"RSI\s+(?:at|:)?\s*([0-9]+\.?[0-9]*)", text, re.IGNORECASE)
+        # Extract RSI - be flexible with formatting (value may be after bold markers, colons, etc.)
+        # Matches: "RSI: 80.80", "**RSI Value:** 80.80", "RSI at 80.80", "RSI (14): 80.80"
+        rsi_match = re.search(
+            r"(?:\*\*)?\s*RSI\s*(?:\([\w\s]+\))?\s*(?:Value\s*)?(?:\*\*\s*)?(?:at|:)?\s*(?:\*\*)?\s*(\d+\.?\d*)",
+            text,
+            re.IGNORECASE,
+        )
         if rsi_match:
             indicators["rsi"] = float(rsi_match.group(1))
 
-        # Extract MACD histogram (e.g., "histogram of 2.84" or "histogram: 2.84")
-        macd_hist_match = re.search(
-            r"histogram\s+(?:of|:)?\s*([0-9]+\.?[0-9]*)", text, re.IGNORECASE
+        # Extract MACD - look for various patterns
+        # Matches: "MACD Line: 8.36", "MACD: 8.36 / 5.52", "**MACD Line:** 8.36"
+        macd_match = re.search(
+            r"(?:\*\*)?\s*MACD\s+(?:Line\s*)?(?:\*\*\s*)?(?::)?\s*(?:\*\*)?\s*(\d+\.?\d*)",
+            text,
+            re.IGNORECASE,
         )
-        if macd_hist_match:
-            indicators["macd"] = float(macd_hist_match.group(1))
+        if macd_match:
+            indicators["macd"] = float(macd_match.group(1))
 
-        # Extract ATR (e.g., "ATR of 6.59" or "ATR: 6.59")
-        atr_match = re.search(r"ATR\s+(?:of|:)?\s*([0-9]+\.?[0-9]*)", text, re.IGNORECASE)
+        # Also try to extract MACD signal line - handle bold markers before text
+        macd_signal_match = re.search(
+            r"(?:\*\*)?\s*(?:Signal|Signal\s+Line)\s*(?:\*\*\s*)?(?::)?\s*(?:\*\*)?\s*(\d+\.?\d*)",
+            text,
+            re.IGNORECASE,
+        )
+        if macd_signal_match:
+            indicators["macd_signal"] = float(macd_signal_match.group(1))
+
+        # Extract ATR - be flexible with formatting
+        # Matches: "ATR: 6.59", "**ATR:** 6.59", "Average True Range (ATR): 6.59"
+        atr_match = re.search(
+            r"(?:\*\*)?\s*(?:Average\s+True\s+Range\s*)?\(?ATR\)?\s*(?:\*\*\s*)?(?:of|:)?\s*(?:\*\*)?\s*(\d+\.?\d*)",
+            text,
+            re.IGNORECASE,
+        )
         if atr_match:
             indicators["atr"] = float(atr_match.group(1))
 
-        # Extract volume ratio (e.g., "volume ratio of 0.84")
-        vol_match = re.search(r"volume ratio\s+(?:of|:)?\s*([0-9]+\.?[0-9]*)", text, re.IGNORECASE)
+        # Extract volume ratio
+        # Matches: "volume ratio of 0.84", "Volume Ratio: 0.84"
+        vol_match = re.search(
+            r"volume\s+ratio\s*(?:\*\*\s*)?(?:of|:)?\s*(\d+\.?\d*)", text, re.IGNORECASE
+        )
         if vol_match:
             indicators["volume_ratio"] = float(vol_match.group(1))
 
@@ -258,14 +264,68 @@ class AnalysisResultNormalizer:
 
         metrics = {}
 
-        # Extract analyst consensus (e.g., "75% (15 of 20 analysts are Buy/Strong Buy)")
-        analyst_match = re.search(r"(\d+)%.*?\((\d+)\s+of\s+(\d+)\s+analysts", text, re.IGNORECASE)
+        # Extract analyst consensus - try multiple formats
+        # Format 1: "75% (15 of 20 analysts)" or "15 out of 20 analysts"
+        analyst_match = re.search(
+            r"(\d+)%.*?\((\d+)\s+(?:of|out of)\s+(\d+)\s+analysts", text, re.IGNORECASE
+        )
         if analyst_match:
             metrics["analyst_consensus"] = {
                 "bullish_pct": int(analyst_match.group(1)),
                 "bullish_count": int(analyst_match.group(2)),
                 "total_analysts": int(analyst_match.group(3)),
             }
+        else:
+            # Format 2: "Strong Buy: 4 analysts", "Buy: 11 analysts", "Total Analysts: 20"
+            # Note: Use (?:\*\*)?\s* to handle optional bold markers
+            total_match = re.search(
+                r"(?:\*\*)?\s*Total(?:\s+Analysts)?(?:\*\*)?\s*:?\s*(\d+)", text, re.IGNORECASE
+            )
+            strong_buy_match = re.search(r"Strong\s+Buy(?:\*\*)?\s*:?\s*(\d+)", text, re.IGNORECASE)
+            # For Buy, match "Buy:" but not "Strong Buy:"
+            buy_match = re.search(
+                r"\b(?:- )?Buy(?:\*\*)?\s*:?\s*(\d+)(?! analysts)", text, re.IGNORECASE
+            )
+            if buy_match:
+                # Verify it's not part of "Strong Buy"
+                match_start = buy_match.start()
+                if match_start >= 7:
+                    preceding = text[match_start - 7 : match_start]
+                    if "Strong" in preceding:
+                        buy_match = None
+
+            hold_match = re.search(r"\b(?:- )?Hold(?:\*\*)?\s*:?\s*(\d+)", text, re.IGNORECASE)
+            sell_match = re.search(
+                r"\b(?:- )?Sell(?:\*\*)?\s*:?\s*(\d+)(?! analysts)", text, re.IGNORECASE
+            )
+            if sell_match:
+                # Verify it's not part of "Strong Sell"
+                match_start = sell_match.start()
+                if match_start >= 7:
+                    preceding = text[match_start - 7 : match_start]
+                    if "Strong" in preceding:
+                        sell_match = None
+
+            if total_match:
+                total = int(total_match.group(1))
+                strong_buy = int(strong_buy_match.group(1)) if strong_buy_match else 0
+                buy = int(buy_match.group(1)) if buy_match else 0
+                hold = int(hold_match.group(1)) if hold_match else 0
+                sell = int(sell_match.group(1)) if sell_match else 0
+                bullish_count = strong_buy + buy
+
+                metrics["analyst_consensus"] = {
+                    "bullish_pct": int((bullish_count / total) * 100) if total > 0 else 0,
+                    "bullish_count": bullish_count,
+                    "total_analysts": total,
+                }
+                # Also store individual counts for metadata
+                metrics["analyst_ratings"] = {
+                    "strong_buy": strong_buy,
+                    "buy": buy,
+                    "hold": hold,
+                    "sell": sell,
+                }
 
         # Extract price (e.g., "$210.49" or "Price: $210.49")
         price_match = re.search(r"\$([0-9]+\.?[0-9]*)", text)
@@ -281,16 +341,60 @@ class AnalysisResultNormalizer:
 
         metrics = {}
 
-        # Extract sentiment distribution (e.g., "Positive: 70% (7 out of 10)")
-        pos_match = re.search(r"Positive.*?(\d+)%.*?\((\d+)\s+out of\s+(\d+)", text, re.IGNORECASE)
+        # Extract sentiment distribution - multiple formats
+        # Format 1: "Positive Articles: 11** (55%)"
+        pos_match = re.search(
+            r"Positive\s+Articles?(?:\*\*)?\s*:?\s*(\d+)(?:\*\*)?\s*\((\d+)%\)", text, re.IGNORECASE
+        )
         if pos_match:
-            metrics["positive_pct"] = int(pos_match.group(1))
-            metrics["positive_count"] = int(pos_match.group(2))
-            total = int(pos_match.group(3))
+            metrics["positive_count"] = int(pos_match.group(1))
+            metrics["positive_pct"] = int(pos_match.group(2))
+        else:
+            # Format 2: "Positive: 70% (7 out of 10)"
+            pos_match2 = re.search(
+                r"Positive.*?(\d+)%.*?\((\d+)\s+(?:out of|of)\s+(\d+)", text, re.IGNORECASE
+            )
+            if pos_match2:
+                metrics["positive_pct"] = int(pos_match2.group(1))
+                metrics["positive_count"] = int(pos_match2.group(2))
+                total = int(pos_match2.group(3))
+            else:
+                # Format 3: "X positive news", "Y total articles"
+                pos_count_match = re.search(
+                    r"(\d+)\s+positive(?:\s+news|\s+articles)?", text, re.IGNORECASE
+                )
+                if pos_count_match:
+                    metrics["positive_count"] = int(pos_count_match.group(1))
 
-        neg_match = re.search(r"Negative.*?(\d+)%", text, re.IGNORECASE)
+        # Extract negative count and percentage
+        neg_match = re.search(
+            r"Negative\s+Articles?(?:\*\*)?\s*:?\s*(\d+)(?:\*\*)?\s*\((\d+)%\)", text, re.IGNORECASE
+        )
         if neg_match:
-            metrics["negative_pct"] = int(neg_match.group(1))
+            metrics["negative_count"] = int(neg_match.group(1))
+            metrics["negative_pct"] = int(neg_match.group(2))
+        else:
+            neg_match2 = re.search(r"Negative.*?(\d+)%", text, re.IGNORECASE)
+            if neg_match2:
+                metrics["negative_pct"] = int(neg_match2.group(1))
+
+        # Extract neutral count
+        neu_match = re.search(
+            r"Neutral\s+Articles?(?:\*\*)?\s*:?\s*(\d+)(?:\*\*)?\s*\((\d+)%\)", text, re.IGNORECASE
+        )
+        if neu_match:
+            metrics["neutral_count"] = int(neu_match.group(1))
+            metrics["neutral_pct"] = int(neu_match.group(2))
+
+        # Calculate total if we have counts
+        if "positive_count" in metrics or "negative_count" in metrics or "neutral_count" in metrics:
+            total = (
+                metrics.get("positive_count", 0)
+                + metrics.get("negative_count", 0)
+                + metrics.get("neutral_count", 0)
+            )
+            if total > 0:
+                metrics["total_articles"] = total
 
         # Calculate counts if we have total
         if "positive_count" in metrics and pos_match:
@@ -306,21 +410,42 @@ class AnalysisResultNormalizer:
         return metrics
 
     @staticmethod
-    def _extract_technical_llm(
-        tech_result: dict[str, Any], fallback_text: str = ""
-    ) -> AnalysisComponentResult:
+    def _extract_technical_llm(tech_result: dict[str, Any]) -> AnalysisComponentResult:
         """Extract technical analysis component from LLM output.
 
+        Handles both Pydantic structured output and legacy markdown parsing.
+
         Args:
-            tech_result: Technical analysis result (may be incomplete)
-            fallback_text: Fallback text to parse (e.g., from fundamental analysis)
+            tech_result: Technical analysis result (Pydantic model or dict)
         """
-        # Handle CrewOutput objects
+        from src.agents.output_models import TechnicalAnalysisOutput
+
+        # Check if we have a Pydantic model
+        result_data = tech_result.get("result", {})
+
+        if isinstance(result_data, TechnicalAnalysisOutput):
+            return AnalysisResultNormalizer._extract_from_technical_pydantic(result_data)
+        elif hasattr(result_data, "pydantic") and result_data.pydantic:
+            return AnalysisResultNormalizer._extract_from_technical_pydantic(result_data.pydantic)
+        elif (
+            isinstance(result_data, dict) and "pydantic" in result_data and result_data["pydantic"]
+        ):
+            return AnalysisResultNormalizer._extract_from_technical_pydantic(
+                result_data["pydantic"]
+            )
+
+        # Fallback to markdown parsing
+        # Handle CrewOutput objects and dict with 'raw' key
+        original_text = ""
         if hasattr(tech_result, "raw"):
             tech_result = tech_result.raw
-
-        # Store original text for markdown parsing
-        original_text = tech_result if isinstance(tech_result, str) else ""
+            original_text = tech_result if isinstance(tech_result, str) else ""
+        elif isinstance(tech_result, dict) and "raw" in tech_result:
+            # LLM agents return {"raw": "markdown", "pydantic": null, "json_dict": null}
+            original_text = tech_result.get("raw", "")
+            tech_result = {}  # Will parse from original_text instead
+        else:
+            original_text = tech_result if isinstance(tech_result, str) else ""
 
         # Convert string to dict
         if isinstance(tech_result, str):
@@ -348,10 +473,16 @@ class AnalysisResultNormalizer:
         if not indicators_data:
             text_to_parse = original_text or fallback_text
             if text_to_parse:
+                logger.debug(
+                    f"Parsing technical indicators from markdown (length: {len(text_to_parse)} chars)"
+                )
                 parsed_indicators = AnalysisResultNormalizer._parse_llm_markdown_for_indicators(
                     text_to_parse
                 )
+                logger.debug(f"Parsed indicators: {parsed_indicators}")
                 indicators_data.update(parsed_indicators)
+            else:
+                logger.warning("No text available to parse technical indicators from")
 
         # Extract MACD values (handle both dict and float formats)
         macd_data = indicators_data.get("macd")
@@ -385,7 +516,27 @@ class AnalysisResultNormalizer:
 
     @staticmethod
     def _extract_fundamental_llm(fund_result: dict[str, Any]) -> AnalysisComponentResult:
-        """Extract fundamental analysis component from LLM output."""
+        """Extract fundamental analysis component from LLM output.
+
+        Handles both Pydantic structured output and legacy markdown parsing.
+        """
+        from src.agents.output_models import FundamentalAnalysisOutput
+
+        # Check if we have a Pydantic model
+        result_data = fund_result.get("result", {})
+
+        if isinstance(result_data, FundamentalAnalysisOutput):
+            return AnalysisResultNormalizer._extract_from_fundamental_pydantic(result_data)
+        elif hasattr(result_data, "pydantic") and result_data.pydantic:
+            return AnalysisResultNormalizer._extract_from_fundamental_pydantic(result_data.pydantic)
+        elif (
+            isinstance(result_data, dict) and "pydantic" in result_data and result_data["pydantic"]
+        ):
+            return AnalysisResultNormalizer._extract_from_fundamental_pydantic(
+                result_data["pydantic"]
+            )
+
+        # Fallback to markdown parsing
         # Handle CrewOutput objects
         if hasattr(fund_result, "raw"):
             fund_result = fund_result.raw
@@ -395,9 +546,11 @@ class AnalysisResultNormalizer:
         original_text = ""
         if isinstance(fund_result, dict) and "raw" in fund_result:
             original_text = fund_result.get("raw", "")
-            # Don't overwrite fund_result yet, we'll try to parse it as JSON first
+            # Set fund_result to empty dict so we parse from markdown
+            fund_result = {}
         elif isinstance(fund_result, str):
             original_text = fund_result
+            fund_result = {}
 
         # Convert string to dict
         if isinstance(fund_result, str):
@@ -422,15 +575,24 @@ class AnalysisResultNormalizer:
         # If no structured data, parse from markdown
         parsed_fundamentals = {}
         if original_text and not metrics_data:
+            logger.debug(
+                f"Parsing fundamental metrics from markdown (length: {len(original_text)} chars)"
+            )
             parsed_fundamentals = AnalysisResultNormalizer._parse_llm_markdown_for_fundamentals(
                 original_text
             )
+            logger.debug(f"Parsed fundamentals: {parsed_fundamentals}")
             if "analyst_consensus" in parsed_fundamentals:
                 consensus = parsed_fundamentals["analyst_consensus"]
                 analyst_data = {
-                    "num_analysts": consensus.get("total_analysts"),  # Map to correct field name
+                    "num_analysts": consensus.get("total_analysts"),
                     "consensus_rating": "buy" if consensus.get("bullish_pct", 0) >= 60 else "hold",
                 }
+                # Also get individual analyst ratings if available
+                if "analyst_ratings" in parsed_fundamentals:
+                    analyst_data.update(parsed_fundamentals["analyst_ratings"])
+        elif not original_text:
+            logger.warning("No text available to parse fundamental metrics from")
 
         fundamental_metrics = FundamentalMetrics(
             pe_ratio=metrics_data.get("pe_ratio"),
@@ -475,7 +637,27 @@ class AnalysisResultNormalizer:
 
     @staticmethod
     def _extract_sentiment_llm(sent_result: dict[str, Any]) -> AnalysisComponentResult:
-        """Extract sentiment analysis component from LLM output."""
+        """Extract sentiment analysis component from LLM output.
+
+        Handles both Pydantic structured output and legacy markdown parsing.
+        """
+        from src.agents.output_models import SentimentAnalysisOutput
+
+        # Check if we have a Pydantic model
+        result_data = sent_result.get("result", {})
+
+        if isinstance(result_data, SentimentAnalysisOutput):
+            return AnalysisResultNormalizer._extract_from_sentiment_pydantic(result_data)
+        elif hasattr(result_data, "pydantic") and result_data.pydantic:
+            return AnalysisResultNormalizer._extract_from_sentiment_pydantic(result_data.pydantic)
+        elif (
+            isinstance(result_data, dict) and "pydantic" in result_data and result_data["pydantic"]
+        ):
+            return AnalysisResultNormalizer._extract_from_sentiment_pydantic(
+                result_data["pydantic"]
+            )
+
+        # Fallback to markdown parsing
         # Handle CrewOutput objects
         if hasattr(sent_result, "raw"):
             sent_result = sent_result.raw
@@ -485,8 +667,11 @@ class AnalysisResultNormalizer:
         original_text = ""
         if isinstance(sent_result, dict) and "raw" in sent_result:
             original_text = sent_result.get("raw", "")
+            # Set sent_result to empty dict so we parse from markdown
+            sent_result = {}
         elif isinstance(sent_result, str):
             original_text = sent_result
+            sent_result = {}
 
         # Convert string to dict
         if isinstance(sent_result, str):
@@ -508,9 +693,13 @@ class AnalysisResultNormalizer:
         # Parse markdown if no structured data
         parsed_sentiment = {}
         if original_text and not sent_result.get("news_count"):
+            logger.debug(f"Parsing sentiment from markdown (length: {len(original_text)} chars)")
             parsed_sentiment = AnalysisResultNormalizer._parse_llm_markdown_for_sentiment(
                 original_text
             )
+            logger.debug(f"Parsed sentiment: {parsed_sentiment}")
+        elif not original_text:
+            logger.warning("No text available to parse sentiment from")
 
         # Calculate sentiment_score from distribution if not provided
         sentiment_score = sent_result.get("sentiment_score")
@@ -641,4 +830,330 @@ class AnalysisResultNormalizer:
             raw_data=sent_data,
             sentiment_info=sentiment_info,
             reasoning=sent_data.get("analysis"),
+        )
+
+    # ==================== Pydantic Model Extraction Helpers ====================
+
+    @staticmethod
+    def _extract_pydantic_model(result: dict[str, Any], model_class: type):
+        """Extract Pydantic model from agent result dict.
+
+        Args:
+            result: CrewOutput object OR dict with {"raw": str, "pydantic": dict, "json_dict": dict}
+                    OR {"result": <PydanticModel>} (legacy structure)
+            model_class: Expected Pydantic model class
+
+        Returns:
+            Pydantic model instance or None if not found
+        """
+        # Import here to avoid circular dependency
+
+        if not result:
+            return None
+
+        # Direct Pydantic instance
+        if isinstance(result, model_class):
+            return result
+
+        # CrewOutput object with .pydantic attribute (CrewAI returns this)
+        if hasattr(result, "pydantic") and not isinstance(result, dict):
+            pyd = result.pydantic
+            if isinstance(pyd, model_class):
+                return pyd
+            # If it's a dict, instantiate the model
+            if isinstance(pyd, dict):
+                try:
+                    return model_class(**pyd)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to instantiate {model_class.__name__} from CrewOutput.pydantic dict: {e}"
+                    )
+                    return None
+
+        # Dict with "pydantic" key at top level
+        if isinstance(result, dict) and "pydantic" in result:
+            pyd = result["pydantic"]
+            if pyd is not None:
+                # If it's already a Pydantic instance, return it
+                if isinstance(pyd, model_class):
+                    return pyd
+                # If it's a dict, instantiate the model from the dict
+                if isinstance(pyd, dict):
+                    try:
+                        return model_class(**pyd)
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to instantiate {model_class.__name__} from dict: {e}"
+                        )
+                        return None
+
+        # Legacy structure: {"result": <data>}
+        if isinstance(result, dict) and "result" in result:
+            result_data = result["result"]
+
+            # Direct Pydantic instance
+            if isinstance(result_data, model_class):
+                return result_data
+
+            # CrewAI structure with pydantic field
+            if hasattr(result_data, "pydantic"):
+                pyd = result_data.pydantic
+                if isinstance(pyd, model_class):
+                    return pyd
+                if isinstance(pyd, dict):
+                    try:
+                        return model_class(**pyd)
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to instantiate {model_class.__name__} from nested dict: {e}"
+                        )
+                        return None
+
+        return None
+
+    @staticmethod
+    def _tech_model_to_component(
+        tech: "TechnicalAnalysisOutput", synth: "SignalSynthesisOutput"
+    ) -> AnalysisComponentResult:
+        """Convert TechnicalAnalysisOutput Pydantic model to component result."""
+        # Import here to avoid circular dependency
+
+        if tech is None:
+            return AnalysisComponentResult(
+                component="technical",
+                score=50.0,
+                technical_indicators=None,
+            )
+
+        return AnalysisComponentResult(
+            component="technical",
+            score=synth.technical_score if synth else tech.technical_score,
+            technical_indicators=TechnicalIndicators(
+                rsi=tech.rsi,
+                macd=tech.macd,
+                macd_signal=tech.macd_signal,
+                atr=tech.atr,
+            ),
+            reasoning=tech.reasoning,
+            confidence=tech.technical_score,
+        )
+
+    @staticmethod
+    def _fund_model_to_component(
+        fund: "FundamentalAnalysisOutput", synth: "SignalSynthesisOutput"
+    ) -> AnalysisComponentResult:
+        """Convert FundamentalAnalysisOutput Pydantic model to component result."""
+        # Import here to avoid circular dependency
+
+        if fund is None:
+            return AnalysisComponentResult(
+                component="fundamental",
+                score=50.0,
+                fundamental_metrics=None,
+                analyst_info=None,
+            )
+
+        # Create AnalystInfo if we have analyst data
+        analyst_info = None
+        if fund.total_analysts:
+            # Calculate consensus rating
+            consensus = "hold"
+            if fund.consensus_rating:
+                consensus = fund.consensus_rating.lower().replace(" ", "_")
+
+            analyst_info = AnalystInfo(
+                num_analysts=fund.total_analysts,
+                consensus_rating=consensus,
+                strong_buy=fund.strong_buy_count,
+                buy=fund.buy_count,
+                hold=fund.hold_count,
+                sell=fund.sell_count,
+                strong_sell=fund.strong_sell_count,
+            )
+
+        return AnalysisComponentResult(
+            component="fundamental",
+            score=synth.fundamental_score if synth else fund.fundamental_score,
+            fundamental_metrics=None,  # Not in Pydantic model yet
+            analyst_info=analyst_info,
+            reasoning=fund.reasoning,
+            confidence=fund.fundamental_score,
+        )
+
+    @staticmethod
+    def _sent_model_to_component(
+        sent: "SentimentAnalysisOutput", synth: "SignalSynthesisOutput"
+    ) -> AnalysisComponentResult:
+        """Convert SentimentAnalysisOutput Pydantic model to component result."""
+        # Import here to avoid circular dependency
+
+        if sent is None:
+            return AnalysisComponentResult(
+                component="sentiment",
+                score=50.0,
+                sentiment_info=None,
+            )
+
+        sentiment_info = SentimentInfo(
+            news_count=sent.total_articles,
+            sentiment_score=sent.sentiment_score,
+            positive_news=sent.positive_count,
+            negative_news=sent.negative_count,
+            neutral_news=sent.neutral_count,
+        )
+
+        return AnalysisComponentResult(
+            component="sentiment",
+            score=synth.sentiment_score if synth else sent.sentiment_strength_score,
+            sentiment_info=sentiment_info,
+            reasoning=sent.reasoning,
+            confidence=sent.sentiment_strength_score,
+        )
+
+    # ==================== Markdown Parsing Fallbacks ====================
+
+    @staticmethod
+    def _parse_technical_markdown(result: dict[str, Any]) -> "TechnicalAnalysisOutput":
+        """Parse technical analysis from markdown (fallback for non-Pydantic output)."""
+        from src.agents.output_models import TechnicalAnalysisOutput
+
+        # Extract raw text
+        text = ""
+        if isinstance(result, dict) and "result" in result:
+            res = result["result"]
+            if isinstance(res, dict) and "raw" in res:
+                text = res["raw"]
+            elif hasattr(res, "raw"):
+                text = res.raw
+
+        # Parse indicators from markdown
+        indicators = AnalysisResultNormalizer._parse_llm_markdown_for_indicators(text)
+
+        # Return minimal model with parsed data
+        return TechnicalAnalysisOutput(
+            rsi=indicators.get("rsi"),
+            macd=indicators.get("macd"),
+            macd_signal=indicators.get("macd_signal"),
+            atr=indicators.get("atr"),
+            trend_direction="neutral",
+            trend_strength="moderate",
+            momentum_status="neutral",
+            technical_score=50,
+            key_findings=["Parsed from markdown"],
+            reasoning="Fallback parsing from unstructured output",
+        )
+
+    @staticmethod
+    def _parse_fundamental_markdown(result: dict[str, Any]) -> "FundamentalAnalysisOutput":
+        """Parse fundamental analysis from markdown (fallback for non-Pydantic output)."""
+        from src.agents.output_models import FundamentalAnalysisOutput
+
+        # Extract raw text
+        text = ""
+        if isinstance(result, dict) and "result" in result:
+            res = result["result"]
+            if isinstance(res, dict) and "raw" in res:
+                text = res["raw"]
+            elif hasattr(res, "raw"):
+                text = res.raw
+
+        # Parse fundamentals from markdown
+        metrics = AnalysisResultNormalizer._parse_llm_markdown_for_fundamentals(text)
+        analyst_data = metrics.get("analyst_ratings", {})
+
+        return FundamentalAnalysisOutput(
+            total_analysts=metrics.get("analyst_consensus", {}).get("total_analysts"),
+            strong_buy_count=analyst_data.get("strong_buy"),
+            buy_count=analyst_data.get("buy"),
+            hold_count=analyst_data.get("hold"),
+            sell_count=analyst_data.get("sell"),
+            strong_sell_count=analyst_data.get("strong_sell"),
+            consensus_rating="Hold",
+            competitive_position="moderate",
+            growth_outlook="moderate",
+            valuation_assessment="fairly valued",
+            fundamental_score=50,
+            key_findings=["Parsed from markdown"],
+            reasoning="Fallback parsing from unstructured output",
+        )
+
+    @staticmethod
+    def _parse_sentiment_markdown(result: dict[str, Any]) -> "SentimentAnalysisOutput":
+        """Parse sentiment analysis from markdown (fallback for non-Pydantic output)."""
+        from src.agents.output_models import SentimentAnalysisOutput
+
+        # Extract raw text
+        text = ""
+        if isinstance(result, dict) and "result" in result:
+            res = result["result"]
+            if isinstance(res, dict) and "raw" in res:
+                text = res["raw"]
+            elif hasattr(res, "raw"):
+                text = res.raw
+
+        # Parse sentiment from markdown
+        metrics = AnalysisResultNormalizer._parse_llm_markdown_for_sentiment(text)
+
+        return SentimentAnalysisOutput(
+            total_articles=metrics.get("total_articles"),
+            positive_count=metrics.get("positive_count"),
+            negative_count=metrics.get("negative_count"),
+            neutral_count=metrics.get("neutral_count"),
+            overall_sentiment="neutral",
+            sentiment_score=0.0,
+            major_themes=["Parsed from markdown"],
+            sentiment_strength_score=50,
+            key_findings=["Parsed from markdown"],
+            reasoning="Fallback parsing from unstructured output",
+        )
+
+    @staticmethod
+    def _parse_synthesis_markdown(result: dict[str, Any]) -> "SignalSynthesisOutput":
+        """Parse signal synthesis from markdown (fallback for non-Pydantic output)."""
+        # Extract and parse JSON from markdown
+        import json
+        import re
+
+        from src.agents.output_models import SignalSynthesisOutput
+
+        synthesis_data = result.get("result", {})
+
+        if isinstance(synthesis_data, dict) and "raw" in synthesis_data:
+            text = synthesis_data["raw"]
+            try:
+                # Try to extract JSON from markdown code blocks
+                text = text.strip()
+                if text.startswith("```"):
+                    text = re.sub(r"^```(?:json)?\n?", "", text)
+                    text = re.sub(r"\n?```$", "", text)
+                    text = text.strip()
+                synthesis_data = json.loads(text)
+            except json.JSONDecodeError:
+                synthesis_data = {}
+
+        if not isinstance(synthesis_data, dict):
+            synthesis_data = {}
+
+        # Extract scores
+        scores = synthesis_data.get("scores", {})
+
+        return SignalSynthesisOutput(
+            technical_score=scores.get("technical", 50),
+            fundamental_score=scores.get("fundamental", 50),
+            sentiment_score=scores.get("sentiment", 50),
+            final_score=synthesis_data.get("final_score", 50),
+            recommendation=synthesis_data.get("recommendation", "hold"),
+            confidence=synthesis_data.get("confidence", 50),
+            key_reasons=synthesis_data.get("key_reasons", ["Parsed from markdown"]),
+            rationale=synthesis_data.get("rationale", "Fallback parsing"),
+            caveats=synthesis_data.get("caveats", []),
+            risk_level="medium",
+            volatility="normal",
+            risk_factors=["Unknown - parsed from markdown"],
+            expected_return_min=synthesis_data.get("expected_return_min", 0.0),
+            expected_return_max=synthesis_data.get("expected_return_max", 10.0),
+            time_horizon=synthesis_data.get("time_horizon", "3M"),
+            company_name=synthesis_data.get("name"),
+            sector=synthesis_data.get("sector"),
+            market=synthesis_data.get("market"),
         )
