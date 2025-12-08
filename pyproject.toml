@@ -22,6 +22,9 @@ dependencies = [
     "langchain-ollama>=1.0.0",
     "litellm>=1.80.7",
     "sqlmodel>=0.0.27",
+    "torch>=2.9.1",
+    "transformers>=4.57.3",
+    "pandas-ta>=0.4.71b0",
 ]
 
 [dependency-groups]
