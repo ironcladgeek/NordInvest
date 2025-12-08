@@ -67,6 +67,13 @@ def _scan_market_for_anomalies(
         if historical_date:
             context["analysis_date"] = historical_date
 
+        # Add lookback days from pipeline config
+        if hasattr(pipeline, "config") and hasattr(pipeline.config, "analysis"):
+            if hasattr(pipeline.config.analysis, "historical_data_lookback_days"):
+                context["historical_data_lookback_days"] = (
+                    pipeline.config.analysis.historical_data_lookback_days
+                )
+
         # Run market scan
         scan_result = pipeline.crew.market_scanner.execute("Scan market for anomalies", context)
 

@@ -26,6 +26,7 @@ class PriceFetcherTool(BaseTool):
         provider_name: str = None,
         fixture_path: str = None,
         use_unified_storage: bool = True,
+        config=None,
     ):
         """Initialize price fetcher.
 
@@ -34,6 +35,7 @@ class PriceFetcherTool(BaseTool):
             provider_name: Data provider to use (default: yahoo_finance, or 'fixture' for test mode)
             fixture_path: Path to fixture directory (required if provider_name is 'fixture')
             use_unified_storage: Use unified CSV storage (PriceDataManager)
+            config: Configuration object with analysis settings (for historical_data_lookback_days)
         """
         super().__init__(
             name="PriceFetcher",
@@ -48,6 +50,7 @@ class PriceFetcherTool(BaseTool):
         self.fixture_path = fixture_path
         self.historical_date = None  # Track historical date for backtesting
         self.use_unified_storage = use_unified_storage
+        self.config = config
 
         # Initialize unified price manager
         self._price_manager: Optional[PriceDataManager] = None
@@ -81,7 +84,7 @@ class PriceFetcherTool(BaseTool):
         ticker: str,
         start_date: datetime = None,
         end_date: datetime = None,
-        days_back: int = 30,
+        days_back: int = None,
     ) -> dict[str, Any]:
         """Fetch price data for ticker using unified CSV storage.
 
@@ -89,12 +92,25 @@ class PriceFetcherTool(BaseTool):
             ticker: Stock ticker symbol
             start_date: Start date (if None, uses days_back)
             end_date: End date (defaults to today or historical_date if set)
-            days_back: Days back from end_date if start_date is None
+            days_back: Days back from end_date if start_date is None (defaults to config value or 730)
 
         Returns:
             Dictionary with prices and metadata
         """
         try:
+            # Use config value for days_back if not provided
+            if days_back is None:
+                if (
+                    self.config
+                    and hasattr(self.config, "analysis")
+                    and hasattr(self.config.analysis, "historical_data_lookback_days")
+                ):
+                    days_back = self.config.analysis.historical_data_lookback_days
+                    logger.debug(f"Using config historical_data_lookback_days: {days_back}")
+                else:
+                    days_back = 730
+                    logger.debug(f"No config available, using default days_back: {days_back}")
+
             # Set date range - use historical_date if set for backtesting
             if end_date is None:
                 if self.historical_date:
@@ -135,37 +151,62 @@ class PriceFetcherTool(BaseTool):
 
         Args:
             ticker: Stock ticker symbol
-            start_date: Start date
-            end_date: End date
+            start_date: Start date (what we need)
+            end_date: End date (what we need)
 
         Returns:
             Dictionary with prices and metadata
         """
         pm = self.price_manager
 
-        # Check if we need to fetch new data
+        # Check what data we already have
         existing_start, existing_end = pm.get_data_range(ticker)
 
         needs_fetch = False
+        fetch_start = None
+        fetch_end = None
+
         if existing_start is None or existing_end is None:
+            # No data at all - fetch the full range
             needs_fetch = True
-            logger.debug(f"No existing price data for {ticker}, fetching fresh")
-        elif existing_end < end_date:
-            needs_fetch = True
-            logger.debug(f"Updating {ticker} prices: {existing_end} -> {end_date}")
-        elif existing_start > start_date:
-            needs_fetch = True
-            logger.debug(f"Backfilling {ticker} prices: {start_date} -> {existing_start}")
-
-        if needs_fetch:
-            # Fetch from provider
             fetch_start = start_date
-            if existing_start and existing_start < start_date:
-                fetch_start = existing_end + timedelta(days=1)  # Only fetch new
-
             fetch_end = end_date
+            logger.debug(
+                f"No existing price data for {ticker}, fetching {start_date} to {end_date}"
+            )
+        else:
+            # We have some data - check if it covers our needed range
+            # Adjust end_date if it's today and we already have yesterday's data
+            # (market may not have closed yet or data may not be available)
+            today = date.today()
+            if end_date >= today and existing_end >= today - timedelta(days=1):
+                # We need today's data, but we have yesterday's - that's recent enough
+                # Don't try to fetch today until we know data is available
+                logger.debug(
+                    f"Adjusting end_date from {end_date} to {existing_end} (market may not have closed)"
+                )
+                end_date = existing_end
 
-            logger.debug(f"Fetching {ticker} prices: {fetch_start} -> {fetch_end}")
+            if existing_start <= start_date and existing_end >= end_date:
+                # We have all the data we need - no fetch required
+                logger.debug(
+                    f"Using cached {ticker} prices: have {existing_start} to {existing_end}, need {start_date} to {end_date}"
+                )
+            elif existing_end < end_date:
+                # Need to fetch forward to update to end_date
+                needs_fetch = True
+                fetch_start = existing_end + timedelta(days=1)
+                fetch_end = end_date
+                logger.debug(f"Updating {ticker} prices forward: {fetch_start} -> {fetch_end}")
+            elif existing_start > start_date:
+                # Need to fetch backward to get earlier data
+                needs_fetch = True
+                fetch_start = start_date
+                fetch_end = existing_start - timedelta(days=1)
+                logger.debug(f"Backfilling {ticker} prices: {fetch_start} -> {fetch_end}")
+
+        if needs_fetch and fetch_start and fetch_end:
+            logger.info(f"Fetching {ticker} prices: {fetch_start} to {fetch_end}")
             prices = self.provider.get_stock_prices(
                 ticker,
                 datetime.combine(fetch_start, datetime.min.time()),
@@ -177,8 +218,12 @@ class PriceFetcherTool(BaseTool):
                 price_dicts = [p.model_dump() for p in prices]
                 pm.store_prices(ticker, price_dicts, append=True)
                 logger.info(f"Stored {len(prices)} prices for {ticker} in unified CSV")
+            else:
+                logger.warning(
+                    f"No new prices fetched for {ticker} in range {fetch_start} to {fetch_end}"
+                )
 
-        # Read from unified storage
+        # Read from unified storage (this will use cached data if we already have the full range)
         df = pm.get_prices(ticker, start_date=start_date, end_date=end_date)
 
         if df.empty:

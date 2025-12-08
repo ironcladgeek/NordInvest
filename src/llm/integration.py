@@ -88,7 +88,7 @@ class LLMAnalysisOrchestrator:
         synthesizer_crew = self.agent_factory.create_signal_synthesizer_agent()
 
         # Create fallback rule-based agents
-        market_scanner_fallback = MarketScannerAgent()
+        market_scanner_fallback = MarketScannerAgent(config=self.config)
         technical_fallback = TechnicalAnalysisAgent()
         fundamental_fallback = FundamentalAnalysisAgent(db_path=self.db_path)
         sentiment_fallback = SentimentAgent()

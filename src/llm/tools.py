@@ -76,7 +76,7 @@ class CrewAIToolAdapter:
             config: Configuration object with analysis settings
         """
         self.config = config
-        self.price_fetcher = PriceFetcherTool()
+        self.price_fetcher = PriceFetcherTool(config=config)
         # Pass config to technical tool so it uses correct indicators and min_periods
         tech_config = config.analysis.technical_indicators if config else None
         self.technical_tool = TechnicalIndicatorTool(config=tech_config)

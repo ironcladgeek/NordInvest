@@ -44,12 +44,13 @@ line-length = 100
 # Ignore logging f-string interpolation warning (G004)
 ignore = ["G004"]
 select = [
-  "F",        # Pyflakes (unused stuff)
-  "E", "W",   # Pycodestyle
-  "B",        # Bugbear
-  "I",        # Import sorting
-  "ARG",      # Unused arguments
-  "PLC0415",  # Import outside top-level (INLINE IMPORTS)
+    "F",       # Pyflakes (unused stuff)
+    "E",
+    "W",       # Pycodestyle
+    "B",       # Bugbear
+    "I",       # Import sorting
+    "ARG",     # Unused arguments
+    "PLC0415", # Import outside top-level (INLINE IMPORTS)
 ]
 
 [tool.pytest.ini_options]
@@ -70,4 +71,6 @@ pre-commit = "pre-commit run --all-files"
 rmpycache = "find . -type d -name '__pycache__' -exec rm -rf {} +"
 rmdatacache = "find data/cache \\( -name '*.json' -o -name '*.csv' \\) -exec rm -f {} +"
 rmreports = "find data/reports -name '*.md' -exec rm -f {} +"
+rmdatabase = "rm -f data/nordinvest.db"
+rmall = "sh -c 'uv run poe rmpycache && uv run poe rmdatacache && uv run poe rmreports && uv run poe rmdatabase'"
 verify-agent-execution = "python scripts/verify_agent_execution.py data/llm_debug"

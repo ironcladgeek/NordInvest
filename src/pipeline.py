@@ -65,7 +65,10 @@ class AnalysisPipeline:
 
         # Initialize components
         self.crew = AnalysisCrew(
-            llm_provider=llm_provider, test_mode_config=test_mode_config, db_path=db_path
+            llm_provider=llm_provider,
+            test_mode_config=test_mode_config,
+            db_path=db_path,
+            config=config,
         )
         self.risk_assessor = RiskAssessor(
             volatility_threshold_high=3.0,

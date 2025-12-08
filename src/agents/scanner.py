@@ -14,15 +14,18 @@ logger = get_logger(__name__)
 class MarketScannerAgent(BaseAgent):
     """Agent for scanning markets and identifying anomalies."""
 
-    def __init__(self, tools: list = None, provider_name: str = None, fixture_path: str = None):
+    def __init__(
+        self, tools: list = None, provider_name: str = None, fixture_path: str = None, config=None
+    ):
         """Initialize Market Scanner agent.
 
         Args:
             tools: Optional list of tools
             provider_name: Data provider to use (default: yahoo_finance)
             fixture_path: Path to fixture directory (required if provider_name is 'fixture')
+            config: Configuration object with analysis settings
         """
-        config = AgentConfig(
+        agent_config = AgentConfig(
             role="Market Scanner",
             goal="Identify financial instruments with significant price movements and anomalies that warrant further analysis",
             backstory=(
@@ -33,8 +36,13 @@ class MarketScannerAgent(BaseAgent):
             ),
         )
         super().__init__(
-            config,
-            tools or [PriceFetcherTool(provider_name=provider_name, fixture_path=fixture_path)],
+            agent_config,
+            tools
+            or [
+                PriceFetcherTool(
+                    provider_name=provider_name, fixture_path=fixture_path, config=config
+                )
+            ],
         )
 
     def execute(self, task: str, context: dict[str, Any] = None) -> dict[str, Any]:
