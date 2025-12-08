@@ -534,16 +534,8 @@ def analyze(
             config_obj.test_mode.use_mock_llm = use_llm
             logger.debug(f"Test mode enabled with fixture: {fixture}")
 
-        pipeline_config = {
-            "capital_starting": config_obj.capital.starting_capital_eur,
-            "capital_monthly_deposit": config_obj.capital.monthly_deposit_eur,
-            "max_position_size_pct": 10.0,
-            "max_sector_concentration_pct": 20.0,
-            "include_disclaimers": True,
-        }
-
         pipeline = AnalysisPipeline(
-            pipeline_config,
+            config_obj,
             cache_manager,
             portfolio_manager,
             llm_provider=config_obj.llm.provider,
@@ -985,16 +977,8 @@ def report(
             db_path=config_obj.database.db_path if config_obj.database.enabled else None,
         )
 
-        pipeline_config = {
-            "capital_starting": config_obj.capital.starting_capital_eur,
-            "capital_monthly_deposit": config_obj.capital.monthly_deposit_eur,
-            "max_position_size_pct": 10.0,
-            "max_sector_concentration_pct": 20.0,
-            "include_disclaimers": True,
-        }
-
         pipeline = AnalysisPipeline(
-            pipeline_config,
+            config_obj,
             cache_manager,
             portfolio_manager,
             llm_provider=config_obj.llm.provider,
