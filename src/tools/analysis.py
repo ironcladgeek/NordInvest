@@ -1,9 +1,11 @@
 """Analysis tools for computing indicators and metrics."""
 
-from typing import Any
+from typing import Any, Optional
 
 import pandas as pd
 
+from src.analysis.technical_indicators import ConfigurableTechnicalAnalyzer
+from src.config.schemas import TechnicalIndicatorsConfig
 from src.tools.base import BaseTool
 from src.utils.logging import get_logger
 
@@ -11,18 +13,39 @@ logger = get_logger(__name__)
 
 
 class TechnicalIndicatorTool(BaseTool):
-    """Tool for calculating technical indicators."""
+    """Tool for calculating technical indicators using pandas-ta.
 
-    def __init__(self):
-        """Initialize technical indicator tool."""
+    Uses the ConfigurableTechnicalAnalyzer for battle-tested indicator calculations
+    with configuration-driven indicator selection.
+    """
+
+    def __init__(self, config: Optional[TechnicalIndicatorsConfig] = None):
+        """Initialize technical indicator tool.
+
+        Args:
+            config: Technical indicators configuration. If None, uses defaults from
+                    the global config or built-in defaults.
+        """
         super().__init__(
             name="TechnicalIndicator",
             description=(
-                "Calculate technical indicators (SMA, RSI, MACD, ATR). "
+                "Calculate technical indicators using pandas-ta library. "
                 "Input: price data. "
                 "Output: Indicator values and trend signals."
             ),
         )
+
+        # Try to get config from global config if not provided
+        if config is None:
+            try:
+                from src.config import get_config
+
+                global_config = get_config()
+                config = global_config.analysis.technical_indicators
+            except Exception:
+                config = TechnicalIndicatorsConfig()
+
+        self._analyzer = ConfigurableTechnicalAnalyzer(config)
 
     def run(self, prices: list[dict[str, Any]]) -> dict[str, Any]:
         """Calculate technical indicators from price data.
@@ -42,62 +65,93 @@ class TechnicalIndicatorTool(BaseTool):
             df["date"] = pd.to_datetime(df["date"])
             df = df.sort_values("date")
 
-            result = {
-                "symbol": df.get("ticker", ["Unknown"])[0],
-                "periods": len(df),
-                "latest_price": df["close_price"].iloc[-1],
+            # Get ticker symbol if available
+            ticker = "Unknown"
+            if "ticker" in df.columns:
+                ticker = df["ticker"].iloc[0]
+
+            # Use configurable analyzer
+            results = self._analyzer.calculate_indicators(df)
+
+            if "error" in results:
+                return results
+
+            # Format output for backward compatibility
+            output = {
+                "symbol": ticker,
+                "periods": results.get("periods"),
+                "latest_price": results.get("latest_price"),
             }
 
-            # Simple Moving Averages
-            if len(df) >= 200:
-                df["sma_20"] = df["close_price"].rolling(20).mean()
-                df["sma_50"] = df["close_price"].rolling(50).mean()
-                df["sma_200"] = df["close_price"].rolling(200).mean()
+            # Extract key indicators for backward compatibility
+            indicators = results.get("indicators", {})
 
-                result["sma_20"] = float(df["sma_20"].iloc[-1])
-                result["sma_50"] = float(df["sma_50"].iloc[-1])
-                result["sma_200"] = float(df["sma_200"].iloc[-1])
+            # SMAs
+            for sma_key in ["sma_20", "sma_50", "sma_200"]:
+                if sma_key in indicators:
+                    output[sma_key] = indicators[sma_key].get("value")
 
-                # Golden cross detection
-                if df["sma_50"].iloc[-1] > df["sma_200"].iloc[-1]:
-                    result["trend"] = "bullish"
-                else:
-                    result["trend"] = "bearish"
-
-            # RSI (Relative Strength Index)
-            if len(df) >= 14:
-                result["rsi"] = self._calculate_rsi(df["close_price"])
+            # RSI
+            if "rsi" in indicators:
+                output["rsi"] = indicators["rsi"].get("value")
 
             # MACD
-            if len(df) >= 26:
-                macd_result = self._calculate_macd(df["close_price"])
-                result["macd"] = macd_result
+            if "macd" in indicators:
+                output["macd"] = indicators["macd"]
 
-            # ATR (Average True Range)
-            if len(df) >= 14:
-                result["atr"] = self._calculate_atr(df)
+            # ATR
+            atr_data = indicators.get("atr") or indicators.get("atr_14")
+            if atr_data:
+                output["atr"] = atr_data.get("value")
 
-            # Volume analysis
-            avg_volume = df["volume"].tail(20).mean()
-            current_volume = df["volume"].iloc[-1]
-            result["volume_ratio"] = current_volume / avg_volume if avg_volume > 0 else 0
+            # Bollinger Bands
+            if "bbands" in indicators:
+                output["bbands"] = indicators["bbands"]
 
-            return result
+            # Trend
+            trend = results.get("trend", {})
+            output["trend"] = trend.get("direction", "neutral")
+            output["trend_signals"] = trend.get("signals", [])
+
+            # Volume ratio
+            vol = results.get("volume_analysis", {})
+            if "ratio" in vol:
+                output["volume_ratio"] = vol["ratio"]
+
+            # Include full results for advanced usage
+            output["full_analysis"] = results
+
+            return output
 
         except Exception as e:
             logger.error(f"Error calculating indicators: {e}")
             return {"error": str(e)}
 
+    def get_summary(self, prices: list[dict[str, Any]]) -> dict[str, Any]:
+        """Get simplified indicator summary suitable for reports.
+
+        Args:
+            prices: List of price dictionaries with OHLCV data
+
+        Returns:
+            Simplified summary dictionary
+        """
+        full_results = self.run(prices)
+        if "error" in full_results:
+            return full_results
+
+        if "full_analysis" in full_results:
+            return self._analyzer.get_indicator_summary(full_results["full_analysis"])
+
+        return full_results
+
+    # Legacy methods preserved for backward compatibility
     @staticmethod
     def _calculate_rsi(prices: pd.Series, period: int = 14) -> float:
         """Calculate RSI (Relative Strength Index).
 
-        Args:
-            prices: Series of close prices
-            period: Period for RSI calculation
-
-        Returns:
-            RSI value (0-100)
+        DEPRECATED: Use ConfigurableTechnicalAnalyzer instead.
+        Kept for backward compatibility.
         """
         deltas = prices.diff()
         gains = deltas.where(deltas > 0, 0)
@@ -117,14 +171,8 @@ class TechnicalIndicatorTool(BaseTool):
     ) -> dict[str, float]:
         """Calculate MACD (Moving Average Convergence Divergence).
 
-        Args:
-            prices: Series of close prices
-            fast: Fast EMA period
-            slow: Slow EMA period
-            signal: Signal line period
-
-        Returns:
-            Dictionary with MACD, Signal, and Histogram
+        DEPRECATED: Use ConfigurableTechnicalAnalyzer instead.
+        Kept for backward compatibility.
         """
         ema_fast = prices.ewm(span=fast).mean()
         ema_slow = prices.ewm(span=slow).mean()
@@ -143,13 +191,10 @@ class TechnicalIndicatorTool(BaseTool):
     def _calculate_atr(df: pd.DataFrame, period: int = 14) -> float:
         """Calculate ATR (Average True Range).
 
-        Args:
-            df: DataFrame with high, low, close prices
-            period: Period for ATR calculation
-
-        Returns:
-            ATR value
+        DEPRECATED: Use ConfigurableTechnicalAnalyzer instead.
+        Kept for backward compatibility.
         """
+        df = df.copy()
         df["tr1"] = df["high_price"] - df["low_price"]
         df["tr2"] = abs(df["high_price"] - df["close_price"].shift(1))
         df["tr3"] = abs(df["low_price"] - df["close_price"].shift(1))
