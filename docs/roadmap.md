@@ -1964,6 +1964,442 @@ Multiple inconsistencies found between cached data, LLM outputs, and generated r
 
 ---
 
+### Issue #3: Data Architecture and Technical Infrastructure Improvements (December 2025)
+
+**Status**: 📋 **PROPOSED** - Architecture improvements for better performance and flexibility
+**Discovered**: 2025-12-08
+**Impact**: Performance, maintainability, configurability, and accuracy
+**Priority**: 🟡 High - Foundation improvements affecting all analysis modes
+
+#### Problem Description
+
+Multiple architectural issues discovered that affect data storage efficiency, calculation accuracy, and system flexibility:
+
+**1. Inefficient Price Data Storage**
+
+**Current Issues**:
+- ❌ Multiple duplicate copies of price data downloaded at different pipeline stages
+- ❌ Varying time ranges across different cache files for same ticker
+- ❌ Data stored as JSON (inefficient for time-series data)
+- ❌ No unified price data management strategy
+
+**Examples**:
+```
+data/cache/TSLA_prices_2025-09-08_2025-12-07.json
+data/cache/TSLA_prices_2025-10-08_2025-12-07.json
+data/cache/TSLA_prices_2025-11-07_2025-12-07.json
+```
+
+**Impact**:
+- Wasted API calls and bandwidth
+- Inconsistent data across pipeline stages
+- Slower data loading (JSON parsing vs binary format)
+- Harder to calculate technical indicators correctly
+
+**2. Suboptimal Technical Indicator Calculation**
+
+**Current Issues**:
+- ❌ Technical indicators calculated using custom implementations
+- ❌ Indicators hardcoded in analysis logic (not configurable)
+- ❌ No leveraging of battle-tested TA libraries
+- ❌ Difficult to add new indicators without code changes
+
+**Impact**:
+- Potential calculation inaccuracies (RSI 77.04 vs 61.01 TradingView)
+- Limited flexibility - can't easily test different indicators
+- More maintenance burden vs using established libraries
+- Inconsistent results vs industry-standard tools
+
+**3. Fragmented News Data Collection**
+
+**Current Issues**:
+- ❌ Multiple cache files with different article counts for same ticker
+- ❌ No unified strategy for collecting news from multiple sources
+- ❌ Article count varies unpredictably (50 vs 20 vs 10)
+- ❌ No clear prioritization between Alpha Vantage and Finnhub
+
+**Examples**:
+```
+data/cache/TSLA_fundamental_2025-12-07.json       # 50 articles
+data/cache/TSLA_news_2025-12-04_2025-12-06.json   # 20 articles
+data/cache/TSLA_news_2025-12-05_2025-12-06.json   # 10 articles
+```
+
+**Impact**:
+- Incomplete sentiment analysis (missing articles)
+- Duplicate API calls
+- Inconsistent analysis results between runs
+- No control over news data quality/quantity
+
+**4. No Local Sentiment Scoring Option**
+
+**Current Issues**:
+- ❌ Sentiment scoring depends entirely on LLM or API-provided scores
+- ❌ No option to use local FinBERT model for sentiment analysis
+- ❌ LLM sentiment scoring adds cost and latency
+- ❌ Not configurable - can't switch between local/LLM sentiment
+
+**Impact**:
+- Higher costs (every news article requires LLM call)
+- Slower analysis (LLM API round-trips)
+- Less transparency in sentiment calculation
+- No offline sentiment analysis option
+
+#### Proposed Solutions
+
+**Solution 1: Unified Price Data Management with CSV Storage** 🎯
+
+**Recommendation**: Store price data in CSV format and use pandas-ta for technical indicators
+
+**Implementation**:
+```python
+# New structure:
+data/cache/prices/
+  ├── TSLA.csv          # Single file per ticker with all historical data
+  ├── AAPL.csv
+  └── NVDA.csv
+
+# CSV format (efficient for time-series):
+# date,open,high,low,close,volume,adj_close
+# 2025-01-01,245.50,248.20,244.10,247.80,12500000,247.80
+
+# Use pandas-ta for indicators:
+import pandas as pd
+import pandas_ta as ta
+
+df = pd.read_csv('data/cache/prices/TSLA.csv', parse_dates=['date'])
+df['rsi'] = ta.rsi(df['close'], length=14)
+df['macd'] = ta.macd(df['close'])['MACD_12_26_9']
+```
+
+**Benefits**:
+- ✅ Single source of truth per ticker (no duplicates)
+- ✅ Efficient binary/CSV storage (faster loading)
+- ✅ Pandas-ta provides 130+ battle-tested indicators
+- ✅ Easy to add historical data incrementally
+- ✅ Better compatibility with backtesting frameworks
+
+**Tasks**:
+- [ ] Create `PriceDataManager` class for unified price storage
+- [ ] Migrate from JSON to CSV format
+- [ ] Replace custom indicator calculations with pandas-ta
+- [ ] Update cache manager to handle CSV files
+- [ ] Add price data validation and quality checks
+
+**Solution 2: Configurable Dynamic Technical Indicators** 🎯
+
+**Recommendation**: Make technical indicators configurable via YAML config
+
+**Implementation**:
+```yaml
+# config/default.yaml
+technical_analysis:
+  indicators:
+    - name: rsi
+      params:
+        length: 14
+      enabled: true
+
+    - name: macd
+      params:
+        fast: 12
+        slow: 26
+        signal: 9
+      enabled: true
+
+    - name: bbands
+      params:
+        length: 20
+        std: 2
+      enabled: true
+
+    - name: atr
+      params:
+        length: 14
+      enabled: true
+
+    # Easy to add new indicators:
+    - name: ema
+      params:
+        length: 50
+      enabled: false  # Can enable/disable per environment
+```
+
+```python
+# src/tools/technical.py
+class ConfigurableTechnicalAnalysisTool:
+    def __init__(self, config: TechnicalAnalysisConfig):
+        self.config = config
+
+    def calculate_indicators(self, df: pd.DataFrame) -> dict:
+        results = {}
+        for indicator in self.config.indicators:
+            if not indicator.enabled:
+                continue
+
+            # Use pandas-ta dynamically
+            func = getattr(ta, indicator.name)
+            results[indicator.name] = func(df['close'], **indicator.params)
+
+        return results
+```
+
+**Benefits**:
+- ✅ No code changes to test different indicators
+- ✅ Easy A/B testing of indicator combinations
+- ✅ Environment-specific configurations (dev vs prod)
+- ✅ Clear documentation of what indicators are used
+- ✅ Can disable expensive indicators in test mode
+
+**Tasks**:
+- [ ] Create `TechnicalAnalysisConfig` Pydantic model
+- [ ] Add indicator configuration to default.yaml
+- [ ] Implement dynamic indicator calculation
+- [ ] Update agents to use configured indicators
+- [ ] Add indicator validation (check pandas-ta support)
+
+**Solution 3: Unified News Collection Strategy** 🎯
+
+**Recommendation**: Unified news fetching with configurable article count and source prioritization
+
+**Implementation**:
+```yaml
+# config/default.yaml
+news:
+  target_article_count: 50  # Configurable minimum
+  max_age_days: 7
+  sources:
+    alpha_vantage:
+      enabled: true
+      priority: 1        # Fetch first
+      max_articles: 50
+    finnhub:
+      enabled: true
+      priority: 2        # Fetch second if needed
+      max_articles: 50
+
+# config/local.yaml
+news:
+  target_article_count: 100  # Override for more thorough analysis
+```
+
+```python
+# src/data/news_aggregator.py
+class UnifiedNewsAggregator:
+    def fetch_news(self, ticker: str, lookback_days: int) -> list[NewsArticle]:
+        articles = []
+        target = self.config.target_article_count
+
+        # Fetch from sources in priority order
+        for source in sorted(self.config.sources, key=lambda s: s.priority):
+            if not source.enabled:
+                continue
+
+            fetched = self.fetch_from_source(source, ticker, lookback_days)
+            articles.extend(fetched)
+
+            if len(articles) >= target:
+                break
+
+        # Deduplicate by URL
+        unique_articles = self.deduplicate(articles)
+
+        # Store in single cache file
+        self.cache.store(f'news_{ticker}', unique_articles)
+        return unique_articles[:target]
+```
+
+**Benefits**:
+- ✅ Single news cache file per ticker
+- ✅ Predictable article count (always reach target if available)
+- ✅ Clear source prioritization (Alpha Vantage first)
+- ✅ Configurable per environment
+- ✅ Automatic deduplication
+
+**Tasks**:
+- [ ] Create `UnifiedNewsAggregator` class
+- [ ] Add news configuration to config schema
+- [ ] Implement source prioritization logic
+- [ ] Add article deduplication by URL/title
+- [ ] Update sentiment tools to use unified news
+
+**Solution 4: Local FinBERT Sentiment Scoring** 🎯
+
+**Recommendation**: Add option to use local FinBERT model for sentiment scoring
+
+**Implementation**:
+```yaml
+# config/default.yaml
+sentiment:
+  scoring_method: local  # Options: local, llm, hybrid
+  local_model:
+    name: ProsusAI/finbert
+    device: cpu  # or cuda if available
+    batch_size: 32
+
+  llm_fallback: true  # Use LLM if local model fails
+```
+
+```python
+# src/sentiment/finbert.py
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+import torch
+
+class FinBERTSentimentScorer:
+    def __init__(self, config: SentimentConfig):
+        self.tokenizer = AutoTokenizer.from_pretrained(config.local_model.name)
+        self.model = AutoModelForSequenceClassification.from_pretrained(
+            config.local_model.name
+        ).to(config.local_model.device)
+
+    def score_articles(self, articles: list[NewsArticle]) -> list[SentimentScore]:
+        """Score sentiment locally using FinBERT."""
+        texts = [f"{art.title}. {art.summary}" for art in articles]
+
+        # Batch processing for efficiency
+        results = []
+        for i in range(0, len(texts), self.config.batch_size):
+            batch = texts[i:i + self.config.batch_size]
+            inputs = self.tokenizer(batch, padding=True, truncation=True,
+                                   return_tensors='pt').to(self.device)
+
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+                probs = torch.softmax(outputs.logits, dim=1)
+
+            # Convert to sentiment scores (-1 to +1)
+            for prob in probs:
+                # FinBERT outputs: [negative, neutral, positive]
+                score = prob[2] - prob[0]  # positive - negative
+                results.append(SentimentScore(
+                    sentiment=self._classify(score),
+                    score=score.item(),
+                    confidence=prob.max().item()
+                ))
+
+        return results
+
+# src/tools/sentiment.py
+class ConfigurableSentimentTool:
+    def analyze_sentiment(self, articles: list[NewsArticle]) -> SentimentResult:
+        if self.config.scoring_method == 'local':
+            scorer = FinBERTSentimentScorer(self.config)
+            scores = scorer.score_articles(articles)
+
+            # Send scored articles to LLM for theme extraction
+            themes = self.llm_extract_themes(articles, scores)
+
+        elif self.config.scoring_method == 'llm':
+            # Full LLM analysis (current approach)
+            scores, themes = self.llm_analyze_all(articles)
+
+        elif self.config.scoring_method == 'hybrid':
+            # Local scoring + LLM validation/theme extraction
+            local_scores = FinBERTSentimentScorer(self.config).score_articles(articles)
+            llm_themes = self.llm_extract_themes(articles, local_scores)
+            scores = self.blend_scores(local_scores, llm_themes)
+
+        return SentimentResult(scores=scores, themes=themes)
+```
+
+**Benefits**:
+- ✅ Zero cost for sentiment scoring (local model)
+- ✅ Faster analysis (no LLM API calls)
+- ✅ Offline capability
+- ✅ Transparent, reproducible sentiment scores
+- ✅ FinBERT specifically trained on financial text
+- ✅ Configurable - can still use LLM if preferred
+- ✅ Hybrid mode: local scoring + LLM theme extraction
+
+**Tasks**:
+- [ ] Add transformers dependency (PyTorch, Hugging Face)
+- [ ] Create `FinBERTSentimentScorer` class
+- [ ] Add sentiment configuration to config schema
+- [ ] Implement local/llm/hybrid scoring modes
+- [ ] Update sentiment agents to use configured method
+- [ ] Add model download and caching
+- [ ] Performance comparison: local vs LLM scoring
+
+#### Implementation Priority
+
+**Phase 1 (High Priority - Foundation)**:
+1. ✅ Unified Price Data Management (CSV + pandas-ta)
+   - Impact: Fixes technical indicator accuracy issues
+   - Effort: Medium (1-2 days)
+   - Risk: Low (well-tested pandas-ta library)
+
+2. ✅ Configurable Technical Indicators
+   - Impact: Enables experimentation and validation
+   - Effort: Low (1 day)
+   - Risk: Very Low (config-only change)
+
+**Phase 2 (Medium Priority - Quality)**:
+3. ✅ Unified News Collection
+   - Impact: Fixes news count inconsistencies
+   - Effort: Medium (1-2 days)
+   - Risk: Low (cleanup + deduplication logic)
+
+**Phase 3 (Lower Priority - Optimization)**:
+4. ✅ Local FinBERT Sentiment Scoring
+   - Impact: Cost reduction, faster analysis
+   - Effort: Medium-High (2-3 days, including testing)
+   - Risk: Medium (new ML dependency, GPU compatibility)
+
+#### Success Criteria
+
+**Price Data Management**:
+- [ ] Single CSV file per ticker for price data
+- [ ] All technical indicators use pandas-ta
+- [ ] Technical indicator values match TradingView within ±3%
+- [ ] No duplicate price data cache files
+
+**Technical Indicators**:
+- [ ] All indicators configurable via YAML
+- [ ] Can enable/disable indicators without code changes
+- [ ] Support for 10+ pandas-ta indicators
+- [ ] Indicator calculation time < 1 second per ticker
+
+**News Collection**:
+- [ ] Single news cache file per ticker
+- [ ] Consistent article count (reaches configured target)
+- [ ] Clear source prioritization (Alpha Vantage → Finnhub)
+- [ ] Automatic deduplication working
+
+**Sentiment Scoring**:
+- [ ] FinBERT model downloads and loads successfully
+- [ ] Local sentiment scoring accuracy ≥ 85% vs manual review
+- [ ] Sentiment analysis time < 5 seconds for 50 articles
+- [ ] Configurable scoring method (local/llm/hybrid)
+- [ ] Cost reduction: $0.05 → $0.00 per 50 articles (local mode)
+
+#### Files to Create/Modify
+
+**New Files**:
+- `src/data/price_manager.py` - Unified price data management
+- `src/sentiment/finbert.py` - Local FinBERT sentiment scorer
+- `src/data/news_aggregator.py` - Unified news collection
+- `src/config/technical_indicators.py` - Indicator configuration models
+
+**Modified Files**:
+- `src/config/schemas.py` - Add technical/news/sentiment config sections
+- `config/default.yaml` - Add new configuration options
+- `src/tools/technical.py` - Use configurable indicators
+- `src/tools/sentiment.py` - Support multiple scoring methods
+- `src/cache/manager.py` - Handle CSV files, unified news caching
+- `requirements.txt` - Add pandas-ta, transformers, torch
+
+#### Dependencies to Add
+
+```toml
+# pyproject.toml additions
+[tool.uv.dependencies]
+pandas-ta = "^0.3.14b"  # Technical analysis indicators
+transformers = "^4.36.0"  # For FinBERT
+torch = "^2.1.0"  # Required by transformers
+```
+
+---
+
 ## Phase 11: Per-Agent LLM Model Configuration
 
 ### Overview - Cost Optimization
