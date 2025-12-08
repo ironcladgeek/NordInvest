@@ -38,6 +38,12 @@ analysis:
   # Time horizon for predictions
   time_horizon_months: 3
 
+  # Historical price data lookback (days)
+  # Default: 730 days (~2 years) - provides sufficient history for technical analysis
+  # yfinance supports up to ~5 years (1825 days) for most stocks
+  # Minimum: 30 days (enough for basic indicators like RSI-14, MACD)
+  historical_data_lookback_days: 730
+
   # Technical analysis indicators (using pandas-ta)
   technical_indicators:
     use_pandas_ta: true # Use pandas-ta library for calculations
@@ -80,12 +86,12 @@ analysis:
       - name: sma
         params:
           length: 50
-        enabled: false  # Disabled - requires 50 periods of data
+        enabled: false # Disabled - requires 50 periods of data
 
       - name: sma
         params:
           length: 200
-        enabled: false  # Disabled - requires 200 periods of data
+        enabled: false # Disabled - requires 200 periods of data
 
       # Exponential Moving Averages (disabled by default)
       - name: ema

@@ -76,7 +76,9 @@ class TechnicalAnalysisAgent(BaseAgent):
                     f"Set historical date {context['analysis_date']} for technical analysis"
                 )
 
-            price_data = price_fetcher.run(ticker, days_back=60)
+            # Use configured lookback period for historical data
+            lookback_days = context.get("historical_data_lookback_days", 730)
+            price_data = price_fetcher.run(ticker, days_back=lookback_days)
 
             if "error" in price_data:
                 return {

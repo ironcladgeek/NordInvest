@@ -68,12 +68,14 @@ def json_serial(obj):
 class CrewAIToolAdapter:
     """Adapts existing tools for use with CrewAI agents."""
 
-    def __init__(self, db_path: str = None):
+    def __init__(self, db_path: str = None, config=None):
         """Initialize tool adapters.
 
         Args:
             db_path: Optional path to database for storing analyst ratings
+            config: Configuration object with analysis settings
         """
+        self.config = config
         self.price_fetcher = PriceFetcherTool()
         self.technical_tool = TechnicalIndicatorTool()
         self.news_fetcher = NewsFetcherTool()
@@ -92,17 +94,23 @@ class CrewAIToolAdapter:
 
         @tool("Fetch Price Data")
         @tool_with_timeout(timeout_seconds=15)
-        def fetch_price_data(ticker: str, days_back: int = 60) -> str:
+        def fetch_price_data(ticker: str, days_back: int = None) -> str:
             """Fetch historical and current price data for an instrument.
 
             Args:
                 ticker: Stock ticker symbol
-                days_back: Number of days of history to fetch
+                days_back: Number of days of history to fetch (defaults to config value)
 
             Returns:
                 JSON string with summary of price data (full data cached for other tools)
             """
             try:
+                # Use config value if days_back not specified
+                if days_back is None:
+                    days_back = (
+                        self.config.analysis.historical_data_lookback_days if self.config else 730
+                    )
+
                 logger.info(f"Fetching price data for {ticker} ({days_back} days)")
                 result = self.price_fetcher.run(ticker, days_back=days_back)
                 if "error" in result:

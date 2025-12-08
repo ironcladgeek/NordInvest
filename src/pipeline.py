@@ -109,6 +109,13 @@ class AnalysisPipeline:
         """
         context = context or {}
         context["tickers"] = tickers
+        # Add configured lookback period to context for agents
+        if hasattr(self.config, "analysis") and hasattr(
+            self.config.analysis, "historical_data_lookback_days"
+        ):
+            context["historical_data_lookback_days"] = (
+                self.config.analysis.historical_data_lookback_days
+            )
 
         logger.debug(f"Starting analysis pipeline for {len(tickers)} instruments")
 

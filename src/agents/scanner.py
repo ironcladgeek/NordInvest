@@ -85,7 +85,9 @@ class MarketScannerAgent(BaseAgent):
                 tickers, label="🔍 Scanning instruments", show_pos=True, show_percent=True
             ) as progress:
                 for ticker in progress:
-                    result = price_fetcher.run(ticker, days_back=30)
+                    # Use configured lookback period for historical data
+                    lookback_days = context.get("historical_data_lookback_days", 730)
+                    result = price_fetcher.run(ticker, days_back=lookback_days)
 
                     if "error" in result:
                         logger.debug(f"Error scanning {ticker}: {result['error']}")

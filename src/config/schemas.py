@@ -125,6 +125,12 @@ class AnalysisConfig(BaseModel):
     time_horizon_months: int = Field(
         default=3, ge=1, le=60, description="Time horizon for predictions in months"
     )
+    historical_data_lookback_days: int = Field(
+        default=730,
+        ge=30,
+        le=1825,
+        description="Days of historical price data to fetch (30-1825, ~2 years default)",
+    )
     technical_indicators: TechnicalIndicatorsConfig = Field(
         default_factory=TechnicalIndicatorsConfig,
         description="Technical analysis indicator configuration",

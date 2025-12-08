@@ -172,6 +172,7 @@ def _run_llm_analysis(
             debug_dir=debug_dir,
             progress_callback=progress_callback,
             db_path=config_obj.database.db_path if config_obj.database.enabled else None,
+            config=config_obj,
         )
 
         # Set historical date on all tools if provided

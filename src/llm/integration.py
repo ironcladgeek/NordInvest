@@ -34,6 +34,7 @@ class LLMAnalysisOrchestrator:
         debug_dir: Optional[Path] = None,
         progress_callback: Optional[callable] = None,
         db_path: Optional[str] = None,
+        config=None,
     ):
         """Initialize analysis orchestrator.
 
@@ -44,6 +45,7 @@ class LLMAnalysisOrchestrator:
             debug_dir: Directory to save debug outputs (inputs/outputs from LLM)
             progress_callback: Optional callback function(message: str) for progress updates
             db_path: Optional path to database for storing analyst ratings
+            config: Full configuration object for accessing analysis settings
         """
         self.llm_config = llm_config or LLMConfig()
         self.token_tracker = token_tracker
@@ -51,6 +53,7 @@ class LLMAnalysisOrchestrator:
         self.debug_dir = debug_dir
         self.progress_callback = progress_callback
         self.db_path = db_path
+        self.config = config
 
         # Create debug directory if needed
         if self.debug_dir:
@@ -60,7 +63,7 @@ class LLMAnalysisOrchestrator:
         # Initialize CrewAI components
         self.agent_factory = CrewAIAgentFactory(self.llm_config)
         self.task_factory = CrewAITaskFactory()
-        self.tool_adapter = CrewAIToolAdapter(db_path=db_path)
+        self.tool_adapter = CrewAIToolAdapter(db_path=db_path, config=config)
 
         # Initialize hybrid agents with fallback
         self.hybrid_agents = self._create_hybrid_agents()
