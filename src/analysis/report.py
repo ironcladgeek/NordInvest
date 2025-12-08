@@ -536,27 +536,45 @@ def format_metadata_tables(signal: InvestmentSignal) -> str:
         sections.append("| Indicator | Value |")
         sections.append("|-----------|-------|")
 
-        if tech.rsi is not None:
-            sections.append(f"| RSI (14) | {tech.rsi:.2f} |")
-        if tech.macd is not None and tech.macd_signal is not None:
-            macd_display = f"{tech.macd:.2f} / {tech.macd_signal:.2f}"
-            if tech.macd_histogram is not None:
-                macd_display += f" / {tech.macd_histogram:.2f}"
+        # Display technical indicators with configuration parameters
+        rsi_14 = getattr(tech, "rsi_14", None)
+        if rsi_14 is not None:
+            sections.append(f"| RSI (14) | {rsi_14:.2f} |")
+
+        # MACD with all 3 components
+        macd_line = getattr(tech, "macd_12_26_9_line", None)
+        macd_signal = getattr(tech, "macd_12_26_9_signal", None)
+        macd_histogram = getattr(tech, "macd_12_26_9_histogram", None)
+        if macd_line is not None and macd_signal is not None:
+            macd_display = f"{macd_line:.2f} / {macd_signal:.2f}"
+            if macd_histogram is not None:
+                macd_display += f" / {macd_histogram:.2f}"
             sections.append(f"| MACD (12, 26, 9) | {macd_display} |")
-        if tech.bb_upper is not None and tech.bb_middle is not None and tech.bb_lower is not None:
+
+        # Bollinger Bands with all 3 bands
+        bb_upper = getattr(tech, "bbands_20_2_upper", None)
+        bb_middle = getattr(tech, "bbands_20_2_middle", None)
+        bb_lower = getattr(tech, "bbands_20_2_lower", None)
+        if bb_upper is not None and bb_middle is not None and bb_lower is not None:
             sections.append(
-                f"| Bollinger Bands (20, 2.0) | ${tech.bb_lower:.2f} / ${tech.bb_middle:.2f} / ${tech.bb_upper:.2f} |"
+                f"| Bollinger Bands (20, 2.0) | ${bb_lower:.2f} / ${bb_middle:.2f} / ${bb_upper:.2f} |"
             )
+
+        # SMAs
         if tech.sma_20 is not None:
             sections.append(f"| SMA (20) | ${tech.sma_20:.2f} |")
         if tech.sma_50 is not None:
             sections.append(f"| SMA (50) | ${tech.sma_50:.2f} |")
-        if tech.sma_200 is not None:
-            sections.append(f"| SMA (200) | ${tech.sma_200:.2f} |")
+        sma_200 = getattr(tech, "sma_200", None)
+        if sma_200 is not None:
+            sections.append(f"| SMA (200) | ${sma_200:.2f} |")
+
+        # Volume and ATR
         if tech.volume_avg is not None:
             sections.append(f"| Avg Volume (20d) | {tech.volume_avg:,} |")
-        if tech.atr is not None:
-            sections.append(f"| ATR (14) | ${tech.atr:.2f} |")
+        atr_14 = getattr(tech, "atr_14", None)
+        if atr_14 is not None:
+            sections.append(f"| ATR (14) | ${atr_14:.2f} |")
 
         sections.append("")
 

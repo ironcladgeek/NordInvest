@@ -747,41 +747,43 @@ class AnalysisResultNormalizer:
 
         components = tech_data.get("components", {})
 
-        # Extract MACD values (handle both dict and float formats)
+        # Build dynamic indicator fields with configuration parameters in names
+        indicator_fields = {}
+
+        # RSI - use rsi_14 format
+        if "rsi" in indicators:
+            indicator_fields["rsi_14"] = indicators["rsi"]
+
+        # MACD - use macd_12_26_9 format with line/signal/histogram
         macd_data = indicators.get("macd")
         if isinstance(macd_data, dict):
-            macd_value = macd_data.get("line")
-            macd_signal_value = macd_data.get("signal")
-            macd_histogram_value = macd_data.get("histogram")
-        else:
-            macd_value = macd_data
-            macd_signal_value = indicators.get("macd_signal")
-            macd_histogram_value = indicators.get("macd_histogram")
+            indicator_fields["macd_12_26_9_line"] = macd_data.get("line")
+            indicator_fields["macd_12_26_9_signal"] = macd_data.get("signal")
+            indicator_fields["macd_12_26_9_histogram"] = macd_data.get("histogram")
 
-        # Extract Bollinger Bands values (handle dict format)
+        # Bollinger Bands - use bbands_20_2.0 format with upper/middle/lower
         bbands_data = indicators.get("bbands")
-        bb_upper = None
-        bb_middle = None
-        bb_lower = None
         if isinstance(bbands_data, dict):
-            bb_upper = bbands_data.get("upper")
-            bb_middle = bbands_data.get("middle")
-            bb_lower = bbands_data.get("lower")
+            indicator_fields["bbands_20_2_upper"] = bbands_data.get("upper")
+            indicator_fields["bbands_20_2_middle"] = bbands_data.get("middle")
+            indicator_fields["bbands_20_2_lower"] = bbands_data.get("lower")
+
+        # SMAs - already have period in name
+        for sma_key in ["sma_20", "sma_50", "sma_200"]:
+            if sma_key in indicators:
+                indicator_fields[sma_key] = indicators[sma_key]
+
+        # ATR - use atr_14 format
+        atr_value = indicators.get("atr") or components.get("volatility", {}).get("atr")
+        if atr_value is not None:
+            indicator_fields["atr_14"] = atr_value
+
+        # Volume average
+        volume_avg = indicators.get("volume_avg") or components.get("volume", {}).get("avg_volume")
 
         technical_indicators = TechnicalIndicators(
-            rsi=indicators.get("rsi"),
-            macd=macd_value,
-            macd_signal=macd_signal_value,
-            macd_histogram=macd_histogram_value,
-            sma_20=indicators.get("sma_20"),
-            sma_50=indicators.get("sma_50"),
-            sma_200=indicators.get("sma_200"),
-            bb_upper=bb_upper,
-            bb_middle=bb_middle,
-            bb_lower=bb_lower,
-            volume_avg=indicators.get("volume_avg")
-            or components.get("volume", {}).get("avg_volume"),
-            atr=indicators.get("atr") or components.get("volatility", {}).get("atr"),
+            volume_avg=volume_avg,
+            **indicator_fields,  # Add all dynamic fields
         )
 
         return AnalysisComponentResult(
