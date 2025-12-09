@@ -277,19 +277,54 @@ class CrewAIToolAdapter:
                     for a in articles_for_analysis
                 )
 
+                # If we have pre-calculated scores, return a summary instead of raw data
+                # This prevents LLM from receiving empty/confusing prompts
+                if has_precalculated:
+                    positive = sum(
+                        1 for a in articles_for_analysis if a.get("sentiment") == "positive"
+                    )
+                    negative = sum(
+                        1 for a in articles_for_analysis if a.get("sentiment") == "negative"
+                    )
+                    neutral = sum(
+                        1 for a in articles_for_analysis if a.get("sentiment") == "neutral"
+                    )
+                    total = len(articles_for_analysis)
+
+                    avg_score = sum(
+                        a.get("sentiment_score", 0)
+                        for a in articles_for_analysis
+                        if a.get("sentiment_score") is not None
+                    ) / max(
+                        1,
+                        sum(
+                            1 for a in articles_for_analysis if a.get("sentiment_score") is not None
+                        ),
+                    )
+
+                    summary = (
+                        f"Sentiment analysis for {ticker}: {total} articles analyzed with pre-calculated sentiment scores.\n"
+                        f"Distribution: {positive} positive ({100 * positive / total:.1f}%), "
+                        f"{negative} negative ({100 * negative / total:.1f}%), "
+                        f"{neutral} neutral ({100 * neutral / total:.1f}%).\n"
+                        f"Average sentiment score: {avg_score:.3f} (range: -1 to +1).\n"
+                        f"Pre-calculated scores are available and should be used for weighted analysis "
+                        f"based on article recency and importance."
+                    )
+
+                    logger.info(
+                        f"Sentiment analysis for {ticker}: {total} articles with pre-calculated scores"
+                    )
+                    return summary
+
                 result = {
                     "ticker": ticker,
                     "articles": articles_for_analysis,
                     "total_articles": len(articles),
                     "has_precalculated_scores": has_precalculated,
-                    "analysis_type": "weighted_scoring"
-                    if has_precalculated
-                    else "llm_sentiment_analysis_required",
+                    "analysis_type": "llm_sentiment_analysis_required",
                     "note": (
-                        "Articles with pre-calculated sentiment scores available. "
-                        "Use weighted scoring based on recency and importance."
-                        if has_precalculated
-                        else "Articles fetched successfully. LLM should analyze each article's title and summary "
+                        "Articles fetched successfully. LLM should analyze each article's title and summary "
                         "to determine sentiment (positive/negative/neutral), score each article, identify "
                         "key themes and events, and provide an overall sentiment assessment."
                     ),
