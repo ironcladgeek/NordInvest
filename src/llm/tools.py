@@ -268,7 +268,7 @@ class CrewAIToolAdapter:
                         "sentiment_score": a.get("sentiment_score"),
                         "importance": a.get("importance"),
                     }
-                    for a in articles[:20]  # Limit to 20 most recent to avoid truncation
+                    for a in articles  # Use all articles up to max_articles limit
                 ]
 
                 # Check if articles have pre-calculated sentiment scores
@@ -393,13 +393,6 @@ class CrewAIToolAdapter:
                                 "total_analysts": 0,
                                 "period": "unknown",
                             },
-                            "news_sentiment": {
-                                "available": False,
-                                "positive": 0,
-                                "negative": 0,
-                                "neutral": 0,
-                                "note": "Unable to fetch sentiment data",
-                            },
                             "price_momentum": {
                                 "available": False,
                                 "change_percent": 0,
@@ -417,16 +410,12 @@ class CrewAIToolAdapter:
 
                 # Extract data components
                 analyst_data = fundamental_result.get("analyst_data", {})
-                sentiment = fundamental_result.get("sentiment", {})
                 price_context = fundamental_result.get("price_context", {})
                 metrics = fundamental_result.get("metrics", {})
                 data_availability = fundamental_result.get("data_availability", "unknown")
 
                 # Check if we have any real data
                 has_analyst_data = analyst_data and analyst_data.get("total_analysts", 0) > 0
-                has_sentiment_data = sentiment and (
-                    sentiment.get("positive", 0) + sentiment.get("negative", 0) > 0
-                )
                 has_price_data = price_context and price_context.get("change_percent") is not None
                 has_metrics = metrics and any(
                     metrics.get(k)
@@ -435,10 +424,11 @@ class CrewAIToolAdapter:
 
                 logger.debug(
                     f"Fundamental data for {ticker}: analyst={has_analyst_data}, "
-                    f"sentiment={has_sentiment_data}, price={has_price_data}, metrics={has_metrics}"
+                    f"price={has_price_data}, metrics={has_metrics}"
                 )
 
                 # Format for LLM analysis
+                # Note: News sentiment is provided separately by analyze_sentiment tool
                 result = {
                     "ticker": ticker,
                     "data_availability": data_availability,
@@ -451,17 +441,6 @@ class CrewAIToolAdapter:
                         "strong_sell": analyst_data.get("strong_sell", 0),
                         "total_analysts": analyst_data.get("total_analysts", 0),
                         "period": analyst_data.get("period", "latest"),
-                    },
-                    "news_sentiment": {
-                        "available": has_sentiment_data,
-                        "positive": sentiment.get("positive", 0),
-                        "negative": sentiment.get("negative", 0),
-                        "neutral": sentiment.get("neutral", 0),
-                        "note": (
-                            "Sentiment from news coverage analysis"
-                            if has_sentiment_data
-                            else "No sentiment data available"
-                        ),
                     },
                     "price_momentum": {
                         "available": has_price_data,
@@ -507,13 +486,6 @@ class CrewAIToolAdapter:
                             "strong_sell": 0,
                             "total_analysts": 0,
                             "period": "unknown",
-                        },
-                        "news_sentiment": {
-                            "available": False,
-                            "positive": 0,
-                            "negative": 0,
-                            "neutral": 0,
-                            "note": "Unable to fetch sentiment data",
                         },
                         "price_momentum": {
                             "available": False,
