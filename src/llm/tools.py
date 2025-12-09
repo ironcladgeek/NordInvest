@@ -253,7 +253,8 @@ class CrewAIToolAdapter:
                         }
                     )
 
-                # Prepare articles for LLM analysis (limit fields to avoid truncation)
+                # Prepare articles for LLM analysis
+                # Preserve pre-calculated sentiment scores and importance if available
                 articles_for_analysis = [
                     {
                         "title": a.get("title", ""),
@@ -262,17 +263,33 @@ class CrewAIToolAdapter:
                         ),  # Limit summary length
                         "source": a.get("source", ""),
                         "published_date": a.get("published_date"),
+                        # Preserve pre-calculated fields for weighted scoring
+                        "sentiment": a.get("sentiment"),
+                        "sentiment_score": a.get("sentiment_score"),
+                        "importance": a.get("importance"),
                     }
                     for a in articles[:20]  # Limit to 20 most recent to avoid truncation
                 ]
+
+                # Check if articles have pre-calculated sentiment scores
+                has_precalculated = any(
+                    a.get("sentiment") or a.get("sentiment_score") is not None
+                    for a in articles_for_analysis
+                )
 
                 result = {
                     "ticker": ticker,
                     "articles": articles_for_analysis,
                     "total_articles": len(articles),
-                    "analysis_type": "llm_sentiment_analysis_required",
+                    "has_precalculated_scores": has_precalculated,
+                    "analysis_type": "weighted_scoring"
+                    if has_precalculated
+                    else "llm_sentiment_analysis_required",
                     "note": (
-                        "Articles fetched successfully. LLM should analyze each article's title and summary "
+                        "Articles with pre-calculated sentiment scores available. "
+                        "Use weighted scoring based on recency and importance."
+                        if has_precalculated
+                        else "Articles fetched successfully. LLM should analyze each article's title and summary "
                         "to determine sentiment (positive/negative/neutral), score each article, identify "
                         "key themes and events, and provide an overall sentiment assessment."
                     ),

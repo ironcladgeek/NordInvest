@@ -1,5 +1,7 @@
 """Analysis tools for computing indicators and metrics."""
 
+import math
+from datetime import datetime
 from typing import Any, Optional
 
 import pandas as pd
@@ -258,27 +260,94 @@ class TechnicalIndicatorTool(BaseTool):
 
 
 class SentimentAnalyzerTool(BaseTool):
-    """Tool for analyzing sentiment from news."""
+    """Tool for analyzing sentiment from news with weighted scoring.
 
-    def __init__(self):
-        """Initialize sentiment analyzer."""
+    Uses pre-calculated sentiment scores when available and applies weights
+    based on article importance and recency.
+    """
+
+    def __init__(self, analysis_date: Optional[Any] = None):
+        """Initialize sentiment analyzer.
+
+        Args:
+            analysis_date: Reference date for calculating recency weights (defaults to today)
+        """
         super().__init__(
             name="SentimentAnalyzer",
             description=(
-                "Score news sentiment and importance. "
+                "Score news sentiment with importance and recency weighting. "
+                "Uses pre-calculated sentiment scores when available. "
                 "Input: news articles. "
-                "Output: Sentiment scores and aggregated metrics."
+                "Output: Weighted sentiment scores and aggregated metrics."
             ),
         )
+        self.analysis_date = analysis_date
 
-    def run(self, articles: list[dict[str, Any]]) -> dict[str, Any]:
-        """Analyze sentiment from articles.
+    def _calculate_recency_weight(self, published_date: Any, reference_date: Any) -> float:
+        """Calculate weight based on article recency.
+
+        Args:
+            published_date: Article publication date
+            reference_date: Reference date for analysis
+
+        Returns:
+            Weight factor (0.0 to 1.0) - newer articles have higher weight
+        """
+        try:
+            # Convert to datetime if needed
+            if isinstance(published_date, str):
+                published_date = pd.to_datetime(published_date)
+            if isinstance(reference_date, str):
+                reference_date = pd.to_datetime(reference_date)
+            elif reference_date is None:
+                reference_date = datetime.now()
+
+            # Calculate age in days
+            age_days = (reference_date - published_date).days
+
+            # Exponential decay: weight = e^(-age_days / half_life)
+            # Half-life of 30 days: articles 30 days old get 0.5 weight
+            # Articles 90 days old get ~0.125 weight
+            # Articles > 180 days get minimal weight
+            half_life = 30
+            weight = math.exp(-age_days / half_life)
+
+            # Clamp to reasonable range
+            return max(0.01, min(1.0, weight))
+
+        except Exception as e:
+            logger.warning(f"Error calculating recency weight: {e}")
+            return 1.0  # Default to full weight on error
+
+    def _calculate_importance_weight(self, importance: Optional[int]) -> float:
+        """Calculate weight based on article importance.
+
+        Args:
+            importance: Importance score (0-100) or None
+
+        Returns:
+            Weight factor (0.3 to 1.0) - more important articles have higher weight
+        """
+        if importance is None:
+            return 0.7  # Default weight for articles without importance score
+
+        # Map 0-100 importance to 0.3-1.0 weight
+        # 100 importance -> 1.0 weight
+        # 50 importance -> 0.65 weight
+        # 0 importance -> 0.3 weight
+        return 0.3 + (importance / 100.0) * 0.7
+
+    def run(
+        self, articles: list[dict[str, Any]], reference_date: Optional[Any] = None
+    ) -> dict[str, Any]:
+        """Analyze sentiment from articles with weighted scoring.
 
         Args:
             articles: List of news article dictionaries
+            reference_date: Optional reference date for recency calculations
 
         Returns:
-            Dictionary with sentiment metrics
+            Dictionary with weighted sentiment metrics
         """
         try:
             if not articles:
@@ -287,20 +356,33 @@ class SentimentAnalyzerTool(BaseTool):
                     "positive": 0,
                     "negative": 0,
                     "neutral": 0,
-                    "avg_sentiment": 0,
+                    "avg_sentiment": 0.0,
+                    "weighted_sentiment": 0.0,
+                    "has_precalculated_scores": False,
                 }
+
+            # Use reference date from parameter or instance variable
+            ref_date = reference_date or self.analysis_date
 
             positive = 0
             negative = 0
             neutral = 0
-            total_score = 0
-            scored_count = 0
+            total_weighted_score = 0.0
+            total_weight = 0.0
+            scored_articles = []
+            has_precalculated = False
 
             for article in articles:
                 sentiment = article.get("sentiment")
                 score = article.get("sentiment_score")
+                importance = article.get("importance")
+                published_date = article.get("published_date")
 
-                # Only count articles that have sentiment data
+                # Check if article has pre-calculated sentiment
+                if sentiment or score is not None:
+                    has_precalculated = True
+
+                # Count sentiment categories
                 if sentiment:
                     if sentiment == "positive":
                         positive += 1
@@ -309,11 +391,42 @@ class SentimentAnalyzerTool(BaseTool):
                     else:
                         neutral += 1
 
-                if score is not None:
-                    total_score += score
-                    scored_count += 1
+                # Calculate weighted score if sentiment data exists
+                if score is not None and sentiment:
+                    # Calculate combined weight
+                    recency_weight = (
+                        self._calculate_recency_weight(published_date, ref_date)
+                        if published_date
+                        else 1.0
+                    )
+                    importance_weight = self._calculate_importance_weight(importance)
+                    combined_weight = recency_weight * importance_weight
 
-            # If no sentiment data is available, return neutral
+                    # Convert score to signed value based on sentiment
+                    # Positive: +score, Negative: -score, Neutral: 0
+                    if sentiment == "positive":
+                        signed_score = score
+                    elif sentiment == "negative":
+                        signed_score = -score
+                    else:
+                        signed_score = 0.0
+
+                    total_weighted_score += signed_score * combined_weight
+                    total_weight += combined_weight
+
+                    scored_articles.append(
+                        {
+                            "title": article.get("title", "")[:50],
+                            "sentiment": sentiment,
+                            "score": score,
+                            "signed_score": signed_score,
+                            "recency_weight": recency_weight,
+                            "importance_weight": importance_weight,
+                            "combined_weight": combined_weight,
+                        }
+                    )
+
+            # If no sentiment data is available, return neutral with flag
             if positive + negative + neutral == 0:
                 return {
                     "count": len(articles),
@@ -324,14 +437,25 @@ class SentimentAnalyzerTool(BaseTool):
                     "negative_pct": 0.0,
                     "neutral_pct": 100.0,
                     "avg_sentiment": 0.0,
+                    "weighted_sentiment": 0.0,
                     "sentiment_direction": "neutral",
-                    "note": "No sentiment data available from provider. LLM analysis needed.",
+                    "has_precalculated_scores": False,
+                    "requires_llm_analysis": True,
+                    "note": "No sentiment data available. LLM analysis required.",
                 }
 
             total_categorized = positive + negative + neutral
-            avg_sentiment = total_score / scored_count if scored_count > 0 else 0
+            weighted_avg = total_weighted_score / total_weight if total_weight > 0 else 0.0
 
-            return {
+            # Determine sentiment direction from weighted average
+            if weighted_avg > 0.05:
+                direction = "positive"
+            elif weighted_avg < -0.05:
+                direction = "negative"
+            else:
+                direction = "neutral"
+
+            result = {
                 "count": len(articles),
                 "positive": positive,
                 "negative": negative,
@@ -339,14 +463,21 @@ class SentimentAnalyzerTool(BaseTool):
                 "positive_pct": round(positive / total_categorized * 100, 2),
                 "negative_pct": round(negative / total_categorized * 100, 2),
                 "neutral_pct": round(neutral / total_categorized * 100, 2),
-                "avg_sentiment": round(avg_sentiment, 3),
-                "sentiment_direction": (
-                    "positive"
-                    if avg_sentiment > 0.1
-                    else ("negative" if avg_sentiment < -0.1 else "neutral")
-                ),
+                "weighted_sentiment": round(weighted_avg, 3),
+                "sentiment_direction": direction,
+                "has_precalculated_scores": has_precalculated,
+                "requires_llm_analysis": not has_precalculated,
+                "scored_count": len(scored_articles),
             }
 
+            # Add debug info for weighted scoring
+            if scored_articles:
+                logger.debug(
+                    f"Weighted sentiment: {weighted_avg:.3f} from {len(scored_articles)} articles"
+                )
+
+            return result
+
         except Exception as e:
-            logger.error(f"Error analyzing sentiment: {e}")
+            logger.error(f"Error analyzing sentiment: {e}", exc_info=True)
             return {"error": str(e)}
