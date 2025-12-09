@@ -476,43 +476,8 @@ class FinancialDataFetcherTool(BaseTool):
             except Exception as e:
                 logger.warning(f"Could not fetch earnings estimates for {ticker}: {e}")
 
-            # Fetch news with sentiment (Alpha Vantage Premium) with historical date
-            news_articles = []
-            news_sentiment_summary = None
-            try:
-                # Fetch latest news articles - limit provides sufficient filtering
-                news_articles = self.provider_manager.get_news(
-                    ticker, limit=50, as_of_date=as_of_date
-                )
-                # Calculate sentiment summary from articles
-                if news_articles:
-                    positive = sum(1 for a in news_articles if a.sentiment == "positive")
-                    negative = sum(1 for a in news_articles if a.sentiment == "negative")
-                    neutral = sum(1 for a in news_articles if a.sentiment == "neutral")
-                    total = len(news_articles)
-
-                    avg_sentiment = sum(
-                        a.sentiment_score for a in news_articles if a.sentiment_score is not None
-                    ) / max(1, sum(1 for a in news_articles if a.sentiment_score is not None))
-
-                    news_sentiment_summary = {
-                        "total_articles": total,
-                        "positive": positive,
-                        "negative": negative,
-                        "neutral": neutral,
-                        "positive_pct": round(100 * positive / total, 1) if total > 0 else 0,
-                        "negative_pct": round(100 * negative / total, 1) if total > 0 else 0,
-                        "avg_sentiment_score": round(avg_sentiment, 3),
-                        "overall_sentiment": (
-                            "positive"
-                            if avg_sentiment > 0.1
-                            else "negative"
-                            if avg_sentiment < -0.1
-                            else "neutral"
-                        ),
-                    }
-            except Exception as e:
-                logger.warning(f"Could not fetch news for {ticker}: {e}")
+            # Note: News sentiment is handled by SentimentAgent and NewsFetcherTool
+            # No need to duplicate it in fundamental data
 
             # Fetch analyst recommendations (Finnhub only) + store in database
             analyst_data = None
@@ -559,8 +524,6 @@ class FinancialDataFetcherTool(BaseTool):
             available_sources = []
             if company_info:
                 available_sources.append("company_overview")
-            if news_sentiment_summary:
-                available_sources.append("news_sentiment")
             if earnings_estimates:
                 available_sources.append("earnings_estimates")
             if analyst_data:
@@ -574,10 +537,6 @@ class FinancialDataFetcherTool(BaseTool):
             company_info_with_source = company_info or {}
             if company_info_with_source:
                 company_info_with_source["data_source"] = "Alpha Vantage"
-
-            news_sentiment_with_source = news_sentiment_summary or {}
-            if news_sentiment_with_source:
-                news_sentiment_with_source["data_source"] = "Alpha Vantage"
 
             earnings_estimates_with_source = earnings_estimates or {}
             if earnings_estimates_with_source:
@@ -598,7 +557,6 @@ class FinancialDataFetcherTool(BaseTool):
             result = {
                 "ticker": ticker,
                 "company_info": company_info_with_source,
-                "news_sentiment": news_sentiment_with_source,
                 "earnings_estimates": earnings_estimates_with_source,
                 "analyst_data": analyst_data_with_source,
                 "price_context": price_context_with_source,
@@ -607,7 +565,10 @@ class FinancialDataFetcherTool(BaseTool):
                     ", ".join(available_sources) if available_sources else "limited"
                 ),
                 "timestamp": datetime.now().isoformat(),
-                "data_sources": "Alpha Vantage Premium (financial + earnings) + Finnhub (analysts) + Yahoo Finance (prices)",
+                "data_sources": (
+                    "Alpha Vantage Premium (financial + earnings) + Finnhub (analysts) + "
+                    "Yahoo Finance (prices)."
+                ),
             }
 
             # Cache enriched data (24 hour TTL)
@@ -1005,7 +966,6 @@ class NewsFetcherTool(BaseTool):
             # Check for news cache files matching this ticker and date
             if self.historical_date:
                 # Look for cache files with date range that includes our historical date
-                cache_pattern = f"news_sentiment:{ticker}:*:*"
                 # The cache manager doesn't support pattern matching, so we'll fetch and check
                 # the date range after retrieval
                 pass
