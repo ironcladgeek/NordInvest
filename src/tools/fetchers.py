@@ -122,7 +122,8 @@ class PriceFetcherTool(BaseTool):
                 else:
                     end_date = datetime.now()
 
-            if start_date is None and period is None:
+            # Only calculate start_date from days_back if NOT using period-based fetching
+            if start_date is None and period is None and days_back is not None:
                 start_date = end_date - timedelta(days=days_back)
 
             # When using period, we don't need start/end dates at all
