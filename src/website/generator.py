@@ -143,7 +143,6 @@ class WebsiteGenerator:
                 "",
                 '!!! warning "Investment Risk"',
                 "    This analysis is for informational purposes only and does not constitute investment advice. All investments carry risk, including potential loss of principal. Consult with a financial advisor before making investment decisions.",
-                "",
             ]
         )
 
@@ -153,7 +152,7 @@ class WebsiteGenerator:
 
         file_path = report_dir / f"{report_date}.md"
         with open(file_path, "w") as f:
-            f.write("\n".join(lines))
+            f.write("\n".join(lines) + "\n")
 
         logger.info(f"Generated report page: {file_path}")
         return file_path
@@ -251,7 +250,7 @@ class WebsiteGenerator:
                     lines.extend(
                         [
                             "",
-                            "#### Technical Indicators",
+                            "**Technical Indicators**",
                             "",
                             "| Indicator | Value |",
                             "|-----------|-------|",
@@ -288,7 +287,7 @@ class WebsiteGenerator:
                     fund = signal.metadata.fundamental_metrics
                     lines.extend(
                         [
-                            "#### Fundamental Metrics",
+                            "**Fundamental Metrics**",
                             "",
                             "| Metric | Value |",
                             "|--------|-------|",
@@ -327,7 +326,7 @@ class WebsiteGenerator:
                     analyst = signal.metadata.analyst_info
                     lines.extend(
                         [
-                            "#### Analyst Ratings",
+                            "**Analyst Ratings**",
                             "",
                             "| Metric | Value |",
                             "|--------|-------|",
@@ -360,7 +359,7 @@ class WebsiteGenerator:
                     sent = signal.metadata.sentiment_info
                     lines.extend(
                         [
-                            "#### News & Sentiment",
+                            "**News & Sentiment**",
                             "",
                             "| Metric | Value |",
                             "|--------|-------|",
