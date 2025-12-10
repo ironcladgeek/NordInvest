@@ -837,7 +837,6 @@ US_CLEAN_ENERGY = [
     "SEDG",  # SolarEdge
     "FSLR",  # First Solar
     "RUN",  # Sunrun
-    "NOVA",  # Sunnova Energy
     "ARRY",  # Array Technologies
     "MAXN",  # Maxeon Solar
     "JKS",  # JinkoSolar
@@ -850,8 +849,6 @@ US_CLEAN_ENERGY = [
     "CHPT",  # ChargePoint
     "BLNK",  # Blink Charging
     "EVGO",  # EVgo Inc
-    "LEV",  # Lion Electric
-    "FSR",  # Fisker
     "LCID",  # Lucid Motors
     "RIVN",  # Rivian
     "NIO",  # NIO Inc
@@ -861,7 +858,6 @@ US_CLEAN_ENERGY = [
     "ALB",  # Albemarle
     "SQM",  # Sociedad Quimica
     "LAC",  # Lithium Americas
-    "LTHM",  # Livent
 ]
 
 US_UTILITIES = [
@@ -959,7 +955,6 @@ US_MATERIALS = [
     "EXP",  # Eagle Materials
     "USLM",  # United States Lime
     "ALB",  # Albemarle
-    "LTHM",  # Livent
     "EMN",  # Eastman Chemical
     "CE",  # Celanese
     "HUN",  # Huntsman
@@ -1180,13 +1175,11 @@ US_EV_AUTONOMOUS = [
     "NIO",  # NIO Inc
     "XPEV",  # XPeng
     "LI",  # Li Auto
-    "FSR",  # Fisker
     "NKLA",  # Nikola
     "GOEV",  # Canoo
     "PSNY",  # Polestar
     "WKHS",  # Workhorse
     "HYLN",  # Hyliion
-    "LEV",  # Lion Electric
     "FFIE",  # Faraday Future
     "MULN",  # Mullen Automotive
     "CHPT",  # ChargePoint
