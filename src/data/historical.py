@@ -5,7 +5,7 @@ on a specific date in the past, with strict date filtering to prevent
 future data leakage.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
 from src.cache.manager import CacheManager
@@ -80,9 +80,9 @@ class HistoricalDataFetcher:
             missing_data_warnings=[],
         )
 
-        # Calculate start date
-        start_date = as_of_datetime - timedelta(days=lookback_days)
-        logger.debug(f"Fetching price data from {start_date} to {as_of_datetime}")
+        # Use period parameter for fetching (yahoo finance will handle date filtering)
+        period = f"{lookback_days}d"
+        logger.debug(f"Fetching price data with period={period}")
 
         try:
             # Try to get historical cached data first (if cache manager available)
@@ -106,9 +106,9 @@ class HistoricalDataFetcher:
                             for price in all_prices
                         ]
 
-            # If no historical cache, fetch from provider
+            # If no historical cache, fetch from provider using period parameter
             if all_prices is None:
-                all_prices = self.provider.get_stock_prices(ticker, start_date, as_of_datetime)
+                all_prices = self.provider.get_stock_prices(ticker, period=period)
 
             # Filter to only include data up to as_of_date (no future data)
             filtered_prices = [

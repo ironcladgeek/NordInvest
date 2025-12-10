@@ -21,19 +21,22 @@ class ProviderManager:
 
     def __init__(
         self,
-        primary_provider: str = "alpha_vantage",
+        primary_provider: str = "yahoo_finance",
         backup_providers: list[str] = None,
         db_path: Path | str | None = None,
+        historical_data_lookback_days: int = 730,
     ):
         """Initialize provider manager.
 
         Args:
-            primary_provider: Primary provider name (default: alpha_vantage)
-            backup_providers: List of backup provider names (default: [yahoo_finance, finnhub])
+            primary_provider: Primary provider name (default: yahoo_finance for price data)
+            backup_providers: List of backup provider names (default: [alpha_vantage] for news/fundamentals)
             db_path: Optional path to database for storing analyst ratings
+            historical_data_lookback_days: Default lookback period in days (default: 730)
         """
         self.primary_provider_name = primary_provider
-        self.backup_provider_names = backup_providers or ["yahoo_finance", "finnhub"]
+        self.backup_provider_names = backup_providers or ["alpha_vantage"]
+        self.historical_data_lookback_days = historical_data_lookback_days
 
         # Initialize providers
         self.primary_provider = self._create_provider(primary_provider)
@@ -89,15 +92,13 @@ class ProviderManager:
     def get_stock_prices(
         self,
         ticker: str,
-        start_date: datetime,
-        end_date: datetime,
+        period: str | None = None,
     ) -> list[StockPrice]:
         """Fetch stock prices with automatic fallback.
 
         Args:
             ticker: Stock ticker symbol
-            start_date: Start date for historical data
-            end_date: End date for historical data
+            period: Period string (e.g., '730d', '60d'). If None, uses historical_data_lookback_days
 
         Returns:
             List of StockPrice objects
@@ -108,17 +109,28 @@ class ProviderManager:
         providers_to_try = [self.primary_provider] + self.backup_providers
         errors = []
 
+        # Use configured lookback days if period not specified
+        if period is None:
+            period = f"{self.historical_data_lookback_days}d"
+
         for provider in providers_to_try:
             if not provider.is_available:
                 logger.debug(f"Skipping unavailable provider: {provider.name}")
                 continue
 
             try:
-                logger.debug(
-                    f"Fetching prices for {ticker} using {provider.name} "
-                    f"({start_date.date()} to {end_date.date()})"
-                )
-                prices = provider.get_stock_prices(ticker, start_date, end_date)
+                # Use period parameter for Yahoo Finance
+                if provider.name == "yahoo_finance":
+                    logger.debug(
+                        f"Fetching prices for {ticker} using {provider.name} (period={period})"
+                    )
+                    prices = provider.get_stock_prices(ticker, period=period)
+                else:
+                    # Other providers don't support period, skip them for price fetching
+                    logger.debug(f"Provider {provider.name} doesn't support period-based fetching")
+                    raise NotImplementedError(
+                        f"{provider.name} requires date ranges, not supported"
+                    )
 
                 if prices:
                     logger.debug(f"Successfully fetched {len(prices)} prices from {provider.name}")

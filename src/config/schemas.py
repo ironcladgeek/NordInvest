@@ -411,6 +411,57 @@ class DatabaseConfig(BaseModel):
     )
 
 
+class FilterStrategyConfig(BaseModel):
+    """Configuration for individual filtering strategies."""
+
+    daily_change_threshold: float = Field(
+        default=5.0, ge=0.1, description="Daily price change % threshold (anomaly strategy)"
+    )
+    weekly_change_threshold: float = Field(
+        default=15.0, ge=0.1, description="Weekly price change % threshold (anomaly strategy)"
+    )
+    volume_spike_multiplier: float = Field(
+        default=1.5, ge=1.0, description="Volume spike multiplier (anomaly strategy)"
+    )
+    lookback_days_high_low: int = Field(
+        default=30, ge=5, description="Days to check for price highs/lows (anomaly strategy)"
+    )
+    min_volume_ratio: float = Field(
+        default=1.2, ge=1.0, description="Minimum volume ratio vs average (volume strategy)"
+    )
+    volume_trend_days: int = Field(
+        default=10, ge=5, description="Days to calculate volume trend (volume strategy)"
+    )
+    min_trend_slope: float = Field(
+        default=10.0, ge=0.0, description="Minimum trend slope % to trigger (volume strategy)"
+    )
+
+
+class FilteringConfig(BaseModel):
+    """Filtering configuration for ticker pre-selection."""
+
+    default_strategy: str = Field(
+        default="anomaly",
+        description="Default filtering strategy: anomaly, volume, or all",
+    )
+    strategies: dict[str, FilterStrategyConfig] = Field(
+        default_factory=lambda: {
+            "anomaly": FilterStrategyConfig(),
+            "volume": FilterStrategyConfig(),
+        },
+        description="Strategy-specific configuration",
+    )
+
+    @field_validator("default_strategy")
+    @classmethod
+    def validate_default_strategy(cls, v: str) -> str:
+        """Validate default strategy is one of allowed values."""
+        allowed = {"anomaly", "volume", "all"}
+        if v.lower() not in allowed:
+            raise ValueError(f"Default filtering strategy must be one of {allowed}")
+        return v.lower()
+
+
 class Config(BaseModel):
     """Root configuration schema."""
 
@@ -440,4 +491,8 @@ class Config(BaseModel):
     )
     database: DatabaseConfig = Field(
         default_factory=DatabaseConfig, description="Database configuration"
+    )
+    filtering: FilteringConfig = Field(
+        default_factory=FilteringConfig,
+        description="Filtering configuration for ticker pre-selection",
     )

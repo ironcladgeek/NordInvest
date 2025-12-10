@@ -3,7 +3,6 @@
 from typing import Any, Optional
 
 from src.agents.analysis import FundamentalAnalysisAgent, TechnicalAnalysisAgent
-from src.agents.scanner import MarketScannerAgent
 from src.agents.sentiment import SentimentAgent, SignalSynthesisAgent
 from src.utils.llm_check import check_llm_configuration
 from src.utils.logging import get_logger
@@ -31,13 +30,7 @@ class AnalysisCrew:
         """
         self.test_mode_config = test_mode_config
 
-        # Determine data provider based on test mode
-        provider_name = "fixture" if test_mode_config and test_mode_config.enabled else None
-        fixture_path = getattr(test_mode_config, "fixture_path", None) if test_mode_config else None
-
-        self.market_scanner = MarketScannerAgent(
-            provider_name=provider_name, fixture_path=fixture_path, config=config
-        )
+        # Initialize analysis agents (no market scanner - filtering handled externally)
         self.technical_agent = TechnicalAnalysisAgent()
         self.fundamental_agent = FundamentalAnalysisAgent(db_path=db_path)
         self.sentiment_agent = SentimentAgent()
@@ -46,10 +39,10 @@ class AnalysisCrew:
         # Check LLM configuration and warn if using fallback
         llm_configured, provider = check_llm_configuration(llm_provider)
         if llm_configured:
-            logger.debug(f"Analysis crew initialized with 5 agents using {provider} LLM")
+            logger.debug(f"Analysis crew initialized with 4 agents using {provider} LLM")
         else:
             logger.warning(
-                "Analysis crew initialized with 5 agents in RULE-BASED MODE. "
+                "Analysis crew initialized with 4 agents in RULE-BASED MODE. "
                 "No LLM configured - using technical indicators and simple rules. "
                 "Set ANTHROPIC_API_KEY or OPENAI_API_KEY for AI-powered analysis."
             )
@@ -125,48 +118,29 @@ class AnalysisCrew:
                 "analysis": {},
             }
 
-    def scan_and_analyze(
+    def analyze_instruments(
         self,
         tickers: list[str],
         additional_context: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
-        """Scan markets and analyze flagged instruments.
+        """Analyze multiple instruments without prior market scanning.
 
-        Workflow:
-        1. Market Scanner identifies anomalies
-        2. Comprehensive analysis on flagged instruments
-        3. Results ranked by signal strength
+        This method should be used when tickers have been pre-filtered
+        by the FilterOrchestrator in main.py, following DRY principles.
 
         Args:
-            tickers: List of tickers to scan
+            tickers: List of pre-filtered tickers to analyze
             additional_context: Additional context
 
         Returns:
-            Scan and analysis results
+            Analysis results for all tickers
         """
         try:
             context = additional_context or {}
-            context["tickers"] = tickers
-
-            logger.debug(f"Starting market scan for {len(tickers)} instruments")
-
-            # Execute market scan
-            scan_result = self.market_scanner.execute("Scan market for anomalies", context)
-
-            if scan_result.get("status") != "success":
-                return {
-                    "status": "error",
-                    "message": scan_result.get("message"),
-                    "analysis_results": [],
-                }
-
-            # Analyze flagged instruments
-            flagged = scan_result.get("instruments", [])
-            logger.debug(f"Found {len(flagged)} instruments with anomalies")
+            logger.debug(f"Starting analysis for {len(tickers)} pre-filtered instruments")
 
             analysis_results = []
-            for instrument in flagged:
-                ticker = instrument.get("ticker")
+            for ticker in tickers:
                 result = self.analyze_instrument(ticker, context)
                 if result.get("status") == "success":
                     analysis_results.append(result)
@@ -176,14 +150,13 @@ class AnalysisCrew:
 
             return {
                 "status": "success",
-                "scan_results": scan_result,
                 "analysis_results": analysis_results,
                 "total_analyzed": len(analysis_results),
                 "strong_signals": [r for r in analysis_results if r.get("confidence", 0) >= 70],
             }
 
         except Exception as e:
-            logger.error(f"Error in scan and analyze: {e}")
+            logger.error(f"Error in analyze_instruments: {e}")
             return {
                 "status": "error",
                 "message": str(e),
@@ -198,12 +171,8 @@ class AnalysisCrew:
         """
         return {
             "crew_name": "AnalysisCrew",
-            "total_agents": 5,
+            "total_agents": 4,
             "agents": {
-                "market_scanner": {
-                    "role": self.market_scanner.role,
-                    "goal": self.market_scanner.goal,
-                },
                 "technical_analyst": {
                     "role": self.technical_agent.role,
                     "goal": self.technical_agent.goal,

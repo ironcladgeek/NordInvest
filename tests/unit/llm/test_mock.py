@@ -14,17 +14,6 @@ class TestMockLLMClient:
         assert client is not None
         assert len(client.responses) > 0
 
-    def test_complete_market_scanner(self):
-        """Test mock completion for market scanner agent."""
-        client = MockLLMClient()
-        response = client.complete("dummy prompt", agent_type="market_scanner")
-
-        # Should be JSON string
-        assert isinstance(response, str)
-        parsed = json.loads(response)
-        assert "status" in parsed
-        assert "instruments" in parsed
-
     def test_complete_signal_synthesizer(self):
         """Test mock completion for signal synthesizer agent."""
         client = MockLLMClient()
@@ -99,20 +88,20 @@ class TestMockLLMClient:
         """Test resetting responses to defaults."""
         client = MockLLMClient()
         custom_response = {"custom": "response"}
-        client.set_response_override("market_scanner", custom_response)
+        client.set_response_override("technical_analyst", custom_response)
 
         # Verify override works
-        response = client.complete("prompt", agent_type="market_scanner")
+        response = client.complete("prompt", agent_type="technical_analyst")
         assert json.loads(response) == custom_response
 
         # Reset
         client.reset_responses()
 
         # Verify default response is restored
-        response = client.complete("prompt", agent_type="market_scanner")
+        response = client.complete("prompt", agent_type="technical_analyst")
         parsed = json.loads(response)
-        assert "status" in parsed
-        assert "instruments" in parsed
+        assert "analysis" in parsed
+        assert "score" in parsed
 
     def test_unknown_agent_type_returns_empty(self):
         """Test handling of unknown agent type."""

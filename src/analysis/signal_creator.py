@@ -4,11 +4,12 @@ This module provides a single SignalCreator class that creates InvestmentSignal
 objects from UnifiedAnalysisResult, working identically for both LLM and rule-based modes.
 """
 
-from datetime import date, datetime, timedelta
-from typing import Any
+from datetime import date, datetime
+from typing import Any, Optional
 
 from src.analysis.metadata_extractor import extract_metadata_from_unified_result
 from src.analysis.models import ComponentScores, InvestmentSignal, UnifiedAnalysisResult
+from src.data.price_manager import PriceDataManager
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -27,17 +28,27 @@ class SignalCreator:
         cache_manager=None,
         provider_manager=None,
         risk_assessor=None,
+        price_manager: Optional[PriceDataManager] = None,
     ):
         """Initialize signal creator.
 
         Args:
-            cache_manager: Cache manager for price lookup
+            cache_manager: Cache manager for price lookup (deprecated, use price_manager)
             provider_manager: Provider manager for price fetching (fallback)
             risk_assessor: Risk assessor for signal evaluation
+            price_manager: PriceDataManager for unified CSV price storage
         """
         self.cache_manager = cache_manager
         self.provider_manager = provider_manager
         self.risk_assessor = risk_assessor
+        self._price_manager = price_manager
+
+    @property
+    def price_manager(self) -> PriceDataManager:
+        """Lazy-load PriceDataManager for unified CSV storage."""
+        if self._price_manager is None:
+            self._price_manager = PriceDataManager()
+        return self._price_manager
 
     def create_signal(
         self,
@@ -170,11 +181,8 @@ class SignalCreator:
             return None
 
         try:
-            # Fetch prices for a small window around target date
-            start_date = datetime.combine(target_date, datetime.min.time())
-            end_date = datetime.combine(target_date + timedelta(days=1), datetime.min.time())
-
-            prices = self.provider_manager.get_stock_prices(ticker, start_date, end_date)
+            # Fetch recent prices using period parameter (get 5 days to ensure we have target date)
+            prices = self.provider_manager.get_stock_prices(ticker, period="5d")
             if not prices:
                 logger.warning(f"No historical prices found for {ticker} around {target_date}")
                 return None
@@ -216,17 +224,30 @@ class SignalCreator:
         """
         logger.debug(f"Fetching current price for {ticker}")
 
-        # Try cache first (faster)
+        # Try unified CSV storage first (PriceDataManager)
+        try:
+            latest = self.price_manager.get_latest_price(ticker)
+            if latest:
+                price = float(latest["close"])
+                currency = latest.get("currency", "USD")
+                logger.debug(f"Got price for {ticker} from unified storage: ${price}")
+                return (price, currency)
+        except Exception as e:
+            logger.debug(f"Unified storage lookup failed for {ticker}: {e}")
+
+        # Try legacy cache (deprecated but kept for backward compatibility)
         if self.cache_manager:
             try:
                 latest_price = self.cache_manager.get_latest_price(ticker)
                 if latest_price and latest_price.close_price:
-                    logger.debug(f"Got price for {ticker} from cache: ${latest_price.close_price}")
+                    logger.debug(
+                        f"Got price for {ticker} from legacy cache: ${latest_price.close_price}"
+                    )
                     return (float(latest_price.close_price), latest_price.currency)
             except Exception as e:
-                logger.debug(f"Cache lookup failed for {ticker}: {e}")
+                logger.debug(f"Legacy cache lookup failed for {ticker}: {e}")
 
-        # Fallback to provider
+        # Fallback to provider (fetch from API)
         if self.provider_manager:
             try:
                 price_obj = self.provider_manager.get_latest_price(ticker)
@@ -236,7 +257,7 @@ class SignalCreator:
             except Exception as e:
                 logger.warning(f"Provider lookup failed for {ticker}: {e}")
 
-        logger.error(f"Could not fetch current price for {ticker} from cache or provider")
+        logger.error(f"Could not fetch current price for {ticker} from any source")
         return None
 
     def _assess_risk(
