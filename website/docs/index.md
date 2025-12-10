@@ -6,6 +6,7 @@ AI-powered financial analysis and investment recommendations.
 
 | Date | Signals | View |
 |------|---------|------|
+| 2025-12-11 | 1 | [View Report](reports/2025-12-11.md) |
 | 2025-12-10 | 1 | [View Report](reports/2025-12-10.md) |
 
 [Browse All Reports](reports/){ .md-button .md-button--primary }
@@ -16,4 +17,4 @@ AI-powered financial analysis and investment recommendations.
 !!! warning "Investment Risk"
     This website is for informational purposes only and does not constitute investment advice. All investments carry risk, including potential loss of principal. Past performance does not guarantee future results. Consult with a financial advisor before making investment decisions.
 
-*Last updated: 2025-12-10 23:51:08*
+*Last updated: 2025-12-11 00:14:04*

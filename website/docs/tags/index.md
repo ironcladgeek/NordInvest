@@ -12,6 +12,8 @@ Browse analysis by ticker, signal type, or date.
 - [SNOW](SNOW.md)
 - [SNY](SNY.md)
 - [SRPT](SRPT.md)
+- [TDG](TDG.md)
+- [TXT](TXT.md)
 
 ## By Signal Type
 
