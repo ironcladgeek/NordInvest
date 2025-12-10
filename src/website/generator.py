@@ -85,7 +85,6 @@ class WebsiteGenerator:
                 "",
                 f"# Market Analysis - {datetime.strptime(report_date, '%Y-%m-%d').strftime('%B %d, %Y')}",
                 "",
-                f"**Analysis Mode:** {metadata.get('analysis_mode', 'unknown').replace('_', '-').title()}  ",
                 f"**Tickers Analyzed:** {len(signals)}  ",
                 f"**Strong Signals:** {len(strong_buy) + len(buy)}",
                 "",
@@ -170,7 +169,7 @@ class WebsiteGenerator:
             List of markdown lines
         """
         lines = [
-            f"### {signal.ticker}",
+            f"#### {signal.ticker}",
             "",
             f"**Recommendation:** {signal.recommendation.value.upper().replace('_', ' ')}  ",
             f"**Confidence:** {signal.confidence}%  ",
