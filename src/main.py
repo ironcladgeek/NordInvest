@@ -1,6 +1,7 @@
 """NordInvest CLI interface."""
 
 import json
+import subprocess
 import sys
 import time
 from datetime import date, datetime
@@ -13,10 +14,17 @@ from src.analysis.signal_creator import SignalCreator
 from src.cache.manager import CacheManager
 from src.config import load_config
 from src.data.db import init_db
+from src.data.historical import HistoricalDataFetcher
 from src.data.portfolio import PortfolioState
 from src.data.price_manager import PriceDataManager
 from src.data.provider_manager import ProviderManager
+from src.data.repository import (
+    PerformanceRepository,
+    RecommendationsRepository,
+    RunSessionRepository,
+)
 from src.filtering import FilterOrchestrator
+from src.filtering.strategies import list_strategies as get_strategies
 from src.llm.integration import LLMAnalysisOrchestrator
 from src.llm.token_tracker import TokenTracker
 from src.MARKET_TICKERS import (
@@ -29,6 +37,7 @@ from src.utils.llm_check import get_fallback_warning_message, log_llm_status
 from src.utils.logging import get_logger, setup_logging
 from src.utils.resilience import RateLimiter
 from src.utils.scheduler import RunLog
+from src.website.generator import WebsiteGenerator
 
 app = typer.Typer(
     name="nordinvest",
@@ -471,12 +480,12 @@ def analyze(
         try:
             historical_date = datetime.strptime(date, "%Y-%m-%d").date()
             typer.echo(f"📅 Historical date analysis mode: {historical_date}")
-        except ValueError:
+        except ValueError as e:
             typer.echo(
                 f"❌ Error: Invalid date format '{date}'. Use YYYY-MM-DD format (e.g., 2024-06-01)",
                 err=True,
             )
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from e
 
     # Handle test mode (true test mode with fixtures)
     if test:
@@ -537,8 +546,6 @@ def analyze(
             logger.debug(f"Database initialized at {config_obj.database.db_path}")
 
             # Initialize repositories for session management
-            from src.data.repository import RecommendationsRepository, RunSessionRepository
-
             session_repo = RunSessionRepository(config_obj.database.db_path)
             recommendations_repo = RecommendationsRepository(config_obj.database.db_path)
 
@@ -574,8 +581,6 @@ def analyze(
         portfolio_manager = PortfolioState(data_dir / "portfolio_state.json")
 
         # Initialize provider manager for price lookups
-        from src.data.provider_manager import ProviderManager
-
         provider_manager = ProviderManager(
             primary_provider=config_obj.data.primary_provider,
             backup_providers=config_obj.data.backup_providers,
@@ -704,9 +709,6 @@ def analyze(
         # Setup historical data fetcher if analyzing historical data
         historical_context_data = {}
         if historical_date:
-            from src.data.historical import HistoricalDataFetcher
-            from src.data.provider_manager import ProviderManager
-
             typer.echo("\n📅 Preparing historical data fetcher...")
             # Get the primary data provider
             provider_manager = ProviderManager(
@@ -950,7 +952,7 @@ def report(
         True, "--save/--no-save", help="Save report to file (default: save)"
     ),
     config: str = typer.Option(
-        "config/default.yaml",
+        "config/local.yaml",
         "--config",
         "-c",
         help="Path to configuration file",
@@ -990,9 +992,9 @@ def report(
         if date:
             try:
                 datetime.strptime(date, "%Y-%m-%d")
-            except ValueError:
+            except ValueError as e:
                 typer.echo(f"❌ Error: Invalid date format '{date}'. Use YYYY-MM-DD", err=True)
-                raise typer.Exit(code=1)
+                raise typer.Exit(code=1) from e
 
         # Load configuration
         config_obj = load_config(config)
@@ -1025,8 +1027,6 @@ def report(
         portfolio_manager = PortfolioState(data_dir / "portfolio_state.json")
 
         # Initialize provider manager for price lookups
-        from src.data.provider_manager import ProviderManager
-
         provider_manager = ProviderManager(
             primary_provider=config_obj.data.primary_provider,
             backup_providers=config_obj.data.backup_providers,
@@ -1093,6 +1093,242 @@ def report(
     except Exception as e:
         logger.error(f"Error generating report: {e}", exc_info=True)
         typer.echo(f"\n❌ Error generating report: {e}", err=True)
+        raise typer.Exit(code=1) from e
+
+
+@app.command()
+def publish(
+    session_id: int | None = typer.Option(
+        None, "--session-id", help="Publish report from run session ID"
+    ),
+    date: str | None = typer.Option(
+        None, "--date", help="Publish report for specific date (YYYY-MM-DD)"
+    ),
+    ticker: str | None = typer.Option(
+        None, "--ticker", help="Publish only for specific ticker symbol"
+    ),
+    build_only: bool = typer.Option(
+        False, "--build-only", help="Only build site, don't deploy to GitHub Pages"
+    ),
+    no_build: bool = typer.Option(
+        False, "--no-build", help="Skip MkDocs build step (for testing content generation)"
+    ),
+    config: str = typer.Option(
+        "config/local.yaml",
+        "--config",
+        "-c",
+        help="Path to configuration file",
+    ),
+) -> None:
+    """Publish analysis results to static website.
+
+    Generate website content from database signals and optionally build/deploy
+    to GitHub Pages. Similar to report command but outputs to website format.
+
+    Examples:
+
+        # Publish from specific session and deploy
+        publish --session-id 123
+
+        # Publish all signals from a date
+        publish --date 2025-12-10
+
+        # Publish only one ticker
+        publish --ticker NVDA --date 2025-12-10
+
+        # Generate content without building site
+        publish --session-id 123 --no-build
+
+        # Build site but don't deploy to GitHub Pages
+        publish --session-id 123 --build-only
+    """
+    try:
+        # Validate inputs
+        if not session_id and not date and not ticker:
+            typer.echo("❌ Error: Must specify --session-id, --date, or --ticker", err=True)
+            typer.echo("Examples:", err=True)
+            typer.echo("  publish --session-id 123", err=True)
+            typer.echo("  publish --date 2025-12-10", err=True)
+            typer.echo("  publish --ticker NVDA --date 2025-12-10", err=True)
+            raise typer.Exit(code=1)
+
+        # Validate date format if provided
+        if date:
+            try:
+                datetime.strptime(date, "%Y-%m-%d")
+            except ValueError:
+                typer.echo(f"❌ Error: Invalid date format '{date}'. Use YYYY-MM-DD", err=True)
+                raise typer.Exit(code=1)
+
+        # Load configuration
+        config_obj = load_config(config)
+        setup_logging(config_obj.logging)
+
+        # Check if database is enabled
+        if not config_obj.database.enabled:
+            typer.echo(
+                "❌ Error: Database is not enabled in configuration.\n"
+                "   Enable database in config file to use website publishing.",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+
+        # Initialize database
+        init_db(config_obj.database.db_path)
+        logger.debug(f"Database initialized at {config_obj.database.db_path}")
+
+        typer.echo("🌐 Publishing to website...")
+        if session_id:
+            typer.echo(f"  Session ID: {session_id}")
+        if date:
+            typer.echo(f"  Date: {date}")
+        if ticker:
+            typer.echo(f"  Ticker: {ticker}")
+
+        # Initialize generator
+        website_dir = Path("website/docs")
+        generator = WebsiteGenerator(
+            config=config_obj,
+            db_path=config_obj.database.db_path,
+            output_dir=str(website_dir),
+        )
+
+        # Load signals from database
+        repo = RecommendationsRepository(config_obj.database.db_path)
+
+        if ticker:
+            # Load signals for specific ticker
+            signals_data = repo.get_recommendations_by_ticker(ticker)
+            if not signals_data:
+                typer.echo(f"❌ No signals found for ticker: {ticker}", err=True)
+                raise typer.Exit(code=1)
+
+            # Generate ticker page
+            typer.echo(f"  Generating page for {ticker}...")
+            ticker_path = generator.generate_ticker_page(ticker)
+            typer.echo(f"  ✓ Created: {ticker_path}")
+
+        elif session_id or date:
+            # Load signals by session or date
+            if session_id:
+                signals = repo.get_recommendations_by_session(session_id)
+            else:
+                signals = repo.get_recommendations_by_date(date)
+
+            if not signals:
+                typer.echo(
+                    f"❌ No signals found for {'session ' + str(session_id) if session_id else 'date ' + date}",
+                    err=True,
+                )
+                raise typer.Exit(code=1)
+
+            # Convert to InvestmentSignal objects
+            signal_objects = []
+            for sig in signals:
+                try:
+                    signal_obj = InvestmentSignal.model_validate(sig)
+                    signal_objects.append(signal_obj)
+                except Exception as e:
+                    logger.warning(f"Failed to load signal {sig.get('ticker', 'unknown')}: {e}")
+                    continue
+
+            if not signal_objects:
+                typer.echo("❌ No valid signals could be loaded", err=True)
+                raise typer.Exit(code=1)
+
+            # Generate report page
+            report_date_str = date if date else signal_objects[0].analysis_date
+            typer.echo(f"  Generating report page for {report_date_str}...")
+
+            metadata = {
+                "session_id": session_id,
+                "total_signals": len(signal_objects),
+            }
+
+            report_path = generator.generate_report_page(
+                signals=signal_objects,
+                report_date=report_date_str,
+                metadata=metadata,
+            )
+            typer.echo(f"  ✓ Created: {report_path}")
+
+            # Generate ticker pages for all tickers in the report
+            typer.echo("  Generating ticker pages...")
+            unique_tickers = list(set(s.ticker for s in signal_objects))
+            for t in unique_tickers:
+                try:
+                    ticker_path = generator.generate_ticker_page(t)
+                    typer.echo(f"    ✓ {t}: {ticker_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to generate page for {t}: {e}")
+                    typer.echo(f"    ⚠️  {t}: {e}")
+
+        # Generate tag pages
+        typer.echo("  Generating tag pages...")
+        try:
+            tag_pages = generator.generate_tag_pages()
+            typer.echo(f"  ✓ Generated {len(tag_pages)} tag pages")
+        except Exception as e:
+            logger.warning(f"Failed to generate tag pages: {e}")
+            typer.echo(f"  ⚠️  Tag generation failed: {e}")
+
+        # Generate index page
+        typer.echo("  Generating index page...")
+        index_path = generator.generate_index_page()
+        typer.echo(f"  ✓ Created: {index_path}")
+
+        # Update navigation
+        typer.echo("  Updating navigation...")
+        generator.update_navigation()
+        typer.echo("  ✓ Navigation updated")
+
+        typer.echo(f"\n✓ Content generated successfully in {website_dir}")
+
+        # Build site with MkDocs if requested
+        if not no_build:
+            typer.echo("\n🔨 Building site with MkDocs...")
+
+            website_root = Path("website")
+            result = subprocess.run(
+                ["mkdocs", "build", "--clean"],
+                cwd=str(website_root),
+                capture_output=True,
+                text=True,
+            )
+
+            if result.returncode != 0:
+                typer.echo(f"❌ MkDocs build failed:\n{result.stderr}", err=True)
+                raise typer.Exit(code=1)
+
+            typer.echo("✓ Site built successfully")
+
+            # Deploy to GitHub Pages if not build-only
+            if not build_only:
+                typer.echo("\n🚀 Deploying to GitHub Pages...")
+                result = subprocess.run(
+                    ["mkdocs", "gh-deploy", "--force"],
+                    cwd=str(website_root),
+                    capture_output=True,
+                    text=True,
+                )
+
+                if result.returncode != 0:
+                    typer.echo(f"❌ Deployment failed:\n{result.stderr}", err=True)
+                    raise typer.Exit(code=1)
+
+                typer.echo("✓ Deployed to GitHub Pages")
+                typer.echo("\n🌐 Your site should be available at:")
+                typer.echo("   https://ironcladgeek.github.io/NordInvest/")
+            else:
+                typer.echo("\n✓ Build complete (deployment skipped)")
+        else:
+            typer.echo("\n✓ Content generation complete (build skipped)")
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        logger.error(f"Error publishing website: {e}", exc_info=True)
+        typer.echo(f"\n❌ Error publishing website: {e}", err=True)
         raise typer.Exit(code=1)
 
 
@@ -1607,9 +1843,6 @@ def track_performance(
         )
 
         # Initialize repositories
-        from src.data.provider_manager import ProviderManager
-        from src.data.repository import PerformanceRepository
-
         perf_repo = PerformanceRepository(db_path)
         provider_manager = ProviderManager(
             primary_provider=config_obj.data.primary_provider,
@@ -1696,7 +1929,7 @@ def track_performance(
     except Exception as e:
         logger.error(f"Error in performance tracking: {e}", exc_info=True)
         typer.echo(f"\n❌ Error: {e}", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command()
@@ -1769,8 +2002,6 @@ def performance_report(
         )
 
         # Initialize repository
-        from src.data.repository import PerformanceRepository
-
         perf_repo = PerformanceRepository(db_path)
 
         # Update performance summary if requested
@@ -1872,7 +2103,6 @@ def list_strategies() -> None:
     Example:
         nordinvest list-strategies
     """
-    from src.filtering.strategies import list_strategies as get_strategies
 
     typer.echo("\n📊 Available Filtering Strategies\n")
     typer.echo("=" * 80)
