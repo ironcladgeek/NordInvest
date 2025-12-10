@@ -124,15 +124,15 @@ class AnalysisPipeline:
         signals = []
 
         try:
-            # Phase 1: Execute crew analysis
-            logger.debug("Phase 1: Running crew analysis")
-            scan_result = self.crew.scan_and_analyze(tickers, context)
+            # Phase 1: Execute crew analysis (tickers should be pre-filtered by main.py)
+            logger.debug("Phase 1: Running crew analysis on pre-filtered tickers")
+            analysis_result = self.crew.analyze_instruments(tickers, context)
 
-            if scan_result.get("status") != "success":
-                logger.error(f"Crew analysis failed: {scan_result.get('message')}")
+            if analysis_result.get("status") != "success":
+                logger.error(f"Crew analysis failed: {analysis_result.get('message')}")
                 return signals, self.portfolio_manager
 
-            analysis_results = scan_result.get("analysis_results", [])
+            analysis_results = analysis_result.get("analysis_results", [])
 
             # Phase 2: Normalize results and create signals with risk assessment
             logger.debug("Phase 2: Normalizing analysis results and creating signals")

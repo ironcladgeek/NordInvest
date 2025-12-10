@@ -16,6 +16,7 @@ from src.data.db import init_db
 from src.data.portfolio import PortfolioState
 from src.data.price_manager import PriceDataManager
 from src.data.provider_manager import ProviderManager
+from src.filtering import FilterOrchestrator
 from src.llm.integration import LLMAnalysisOrchestrator
 from src.llm.token_tracker import TokenTracker
 from src.MARKET_TICKERS import (
@@ -38,91 +39,133 @@ app = typer.Typer(
 logger = get_logger(__name__)
 
 
-def _scan_market_for_anomalies(
+def _filter_tickers(
     tickers: list[str],
-    pipeline: "AnalysisPipeline",
+    strategy: str,
+    config_obj,
     typer_instance,
     force_full_analysis: bool = False,
     historical_date=None,
-) -> list[str]:
-    """Scan market for anomalies using rule-based market scanner.
+    test_mode_config=None,
+) -> tuple[list[str], dict]:
+    """Filter tickers using specified strategy before analysis.
 
-    This is Stage 1 of two-stage LLM analysis - quickly identifies
-    instruments with anomalies before expensive LLM analysis.
+    Unified filtering path for both LLM and rule-based analysis modes.
+    Implements DRY principle by having a single filtering logic.
 
     Args:
-        tickers: List of tickers to scan
-        pipeline: Analysis pipeline with market scanner
+        tickers: List of tickers to filter
+        strategy: Filtering strategy name ('anomaly', 'volume', 'all')
+        config_obj: Configuration object
         typer_instance: Typer instance for output
-        force_full_analysis: If True, analyze all tickers when no anomalies found
+        force_full_analysis: If True, use 'all' strategy regardless of specified strategy
         historical_date: Optional date for historical analysis
+        test_mode_config: Optional test mode configuration
 
     Returns:
-        List of flagged tickers with anomalies
+        Tuple of (filtered_tickers, filter_result)
+        - filtered_tickers: List of tickers that passed the filter
+        - filter_result: Full filter result dictionary with details
 
     Raises:
-        RuntimeError: If market scan fails (to avoid expensive LLM fallback)
-        RuntimeError: If no anomalies found and force_full_analysis=False
+        RuntimeError: If filtering fails or no tickers pass filter (unless force_full_analysis)
     """
     try:
-        typer_instance.echo("🔍 Stage 1: Scanning market for anomalies...")
-        context = {"tickers": tickers}
-        if historical_date:
-            context["analysis_date"] = historical_date
-
-        # Add lookback days from pipeline config
-        if hasattr(pipeline, "config") and hasattr(pipeline.config, "analysis"):
-            if hasattr(pipeline.config.analysis, "historical_data_lookback_days"):
-                context["historical_data_lookback_days"] = (
-                    pipeline.config.analysis.historical_data_lookback_days
-                )
-
-        # Run market scan
-        scan_result = pipeline.crew.market_scanner.execute("Scan market for anomalies", context)
-
-        if scan_result.get("status") != "success":
-            error_msg = scan_result.get("message", "Unknown error")
-            logger.error(f"Market scan failed: {error_msg}")
-            raise RuntimeError(
-                f"Market scan failed: {error_msg}\n"
-                "Unable to proceed with LLM analysis to avoid incurring unnecessary costs.\n"
-                "Please check market data availability and try again."
+        # Override strategy if force_full_analysis is enabled
+        if force_full_analysis:
+            strategy = "all"
+            typer_instance.echo(
+                "  ⚠️  --force-full-analysis enabled: using 'all' strategy (no filtering)"
             )
 
-        # Extract flagged instruments
-        flagged = scan_result.get("instruments", [])
-        flagged_tickers = [
-            instrument.get("ticker") for instrument in flagged if instrument.get("ticker")
-        ]
+        typer_instance.echo(f"🔍 Filtering tickers using '{strategy}' strategy...")
 
-        if not flagged_tickers:
-            logger.warning("Market scan completed but found no anomalies")
-            if not force_full_analysis:
-                raise RuntimeError(
-                    "Market scan found no anomalies in the selected instruments.\n"
-                    "To analyze all instruments anyway in LLM mode (higher cost), "
-                    "use --force-full-analysis flag.\n"
-                    "Example: analyze --group us_mega_cap --llm --force-full-analysis"
+        # Get lookback days from config
+        lookback_days = 730
+        if hasattr(config_obj, "analysis") and hasattr(
+            config_obj.analysis, "historical_data_lookback_days"
+        ):
+            lookback_days = config_obj.analysis.historical_data_lookback_days
+
+        # Get strategy config if available (convert Pydantic model to dict)
+        strategy_config = None
+        if hasattr(config_obj, "filtering") and hasattr(config_obj.filtering, "strategies"):
+            strategy_cfg = getattr(config_obj.filtering.strategies, strategy, None)
+            if strategy_cfg:
+                # Convert Pydantic model to dict for strategy initialization
+                strategy_config = (
+                    strategy_cfg.model_dump()
+                    if hasattr(strategy_cfg, "model_dump")
+                    else dict(strategy_cfg)
                 )
-            typer_instance.echo("  ⚠️  No anomalies detected, but proceeding with all instruments")
-            typer_instance.echo("     (--force-full-analysis flag was provided)")
-            return tickers
 
-        typer_instance.echo(
-            f"  ✓ Scan complete: {len(flagged_tickers)} anomalies found "
-            f"({len(flagged_tickers)}/{len(tickers)} instruments)"
+        # Setup provider for price fetching
+        provider_name = None
+        fixture_path = None
+        if test_mode_config and test_mode_config.enabled:
+            provider_name = "fixture"
+            fixture_path = test_mode_config.fixture_path
+        else:
+            provider_name = config_obj.data.primary_provider
+
+        # Create orchestrator
+        orchestrator = FilterOrchestrator(
+            strategy=strategy,
+            provider_name=provider_name,
+            fixture_path=fixture_path,
+            config=config_obj,
+            strategy_config=strategy_config,
         )
 
-        return flagged_tickers
+        # Execute filtering
+        filter_result = orchestrator.filter_tickers(
+            tickers=tickers,
+            historical_date=historical_date,
+            lookback_days=lookback_days,
+            show_progress=True,
+        )
+
+        if filter_result.get("status") != "success":
+            error_msg = filter_result.get("message", "Unknown error")
+            logger.error(f"Filtering failed: {error_msg}")
+            raise RuntimeError(
+                f"Filtering failed: {error_msg}\n"
+                "Unable to proceed with analysis.\n"
+                "Check logs for details."
+            )
+
+        filtered_tickers = filter_result.get("filtered_tickers", [])
+
+        if not filtered_tickers and strategy != "all":
+            logger.warning(f"No tickers passed '{strategy}' filter")
+            if not force_full_analysis:
+                raise RuntimeError(
+                    f"No tickers passed the '{strategy}' filter.\n"
+                    "To analyze all tickers anyway (higher cost), "
+                    "use --force-full-analysis flag or --strategy all.\n"
+                    f"Example: analyze --group us_mega_cap --strategy {strategy} --force-full-analysis"
+                )
+
+        total_scanned = filter_result.get("total_scanned", len(tickers))
+        total_filtered = filter_result.get("total_filtered", len(filtered_tickers))
+
+        if total_filtered < total_scanned:
+            reduction_pct = 100 * (1 - total_filtered / total_scanned)
+            typer_instance.echo(
+                f"  ✓ Filtering complete: {total_filtered}/{total_scanned} tickers selected "
+                f"({reduction_pct:.0f}% reduction)"
+            )
+        else:
+            typer_instance.echo(f"  ✓ All {total_filtered} tickers selected")
+
+        return filtered_tickers, filter_result
 
     except RuntimeError:
         raise
     except Exception as e:
-        logger.error(f"Error in market scan: {e}", exc_info=True)
+        logger.error(f"Error during filtering: {e}", exc_info=True)
         raise RuntimeError(
-            f"Market scan error: {str(e)}\n"
-            "Unable to proceed with LLM analysis to avoid incurring unnecessary costs.\n"
-            "Check logs for details."
+            f"Filtering error: {str(e)}\nUnable to proceed with analysis.\nCheck logs for details."
         )
 
 
@@ -363,7 +406,18 @@ def analyze(
     force_full_analysis: bool = typer.Option(
         False,
         "--force-full-analysis",
-        help="Force LLM analysis on all tickers when market scan finds no anomalies (increases costs)",
+        help="Analyze all tickers regardless of filter strategy (increases costs)",
+    ),
+    strategy: str = typer.Option(
+        "anomaly",
+        "--strategy",
+        "-s",
+        help=(
+            "Filtering strategy: 'anomaly' (price/volume anomalies), "
+            "'volume' (volume patterns), 'momentum' (sustained trends), "
+            "'volatility' (high volatility), 'breakout' (support/resistance breaks), "
+            "'gap' (price gaps), 'all' (no filtering). Use 'list-strategies' command for details."
+        ),
     ),
 ) -> None:
     """Analyze markets and generate investment signals.
@@ -688,48 +742,41 @@ def analyze(
                 if analyzed_tickers_specified
                 else None,
                 initial_tickers_count=len(ticker_list),
-                anomalies_count=0,  # Will be updated after market scan in LLM mode
+                anomalies_count=0,  # Will be updated after filtering
                 force_full_analysis=force_full_analysis,
             )
             # Update pipeline with session ID
             pipeline.run_session_id = run_session_id
             logger.debug(f"Created run session: {run_session_id}")
 
+        # Apply filtering strategy before analysis (unified for both LLM and rule-based)
+        typer.echo(f"\n🔍 Stage 1: Filtering tickers (strategy: {strategy})")
+        try:
+            filtered_ticker_list, filter_result = _filter_tickers(
+                ticker_list,
+                strategy,
+                config_obj,
+                typer,
+                force_full_analysis,
+                historical_date,
+                config_obj.test_mode if test else None,
+            )
+
+            # Track which tickers passed the filter
+            tickers_with_anomalies = filtered_ticker_list
+            force_full_analysis_used = force_full_analysis
+
+        except RuntimeError as e:
+            # Display error cleanly without traceback
+            typer.echo(f"\n❌ Error: {str(e)}", err=True)
+            sys.exit(1)
+
         # Run analysis (LLM or rule-based)
         if use_llm:
-            typer.echo("\n🤖 Using two-stage LLM-powered analysis")
-            typer.echo("   Stage 1: Rule-based market scan for anomalies")
-            typer.echo("   Stage 2: Deep LLM analysis on flagged instruments")
+            typer.echo("\n🤖 Stage 2: Deep LLM-powered analysis")
+            typer.echo(f"   LLM Provider: {config_obj.llm.provider}")
+            typer.echo(f"   Model: {config_obj.llm.model}")
 
-            # Stage 1: Market scan to identify anomalies
-            try:
-                filtered_ticker_list = _scan_market_for_anomalies(
-                    ticker_list, pipeline, typer, force_full_analysis, historical_date
-                )
-                # If force_full_analysis is False and we got here, anomalies were found
-                # If force_full_analysis is True and no filtering happened, flag was used
-                if force_full_analysis and len(filtered_ticker_list) == len(ticker_list):
-                    # --force-full-analysis was used and no anomalies were found
-                    force_full_analysis_used = True
-                else:
-                    # Anomalies were found (whether filtered or not)
-                    tickers_with_anomalies = filtered_ticker_list
-            except RuntimeError as e:
-                # Display error cleanly without traceback
-                typer.echo(f"\n❌ Error: {str(e)}", err=True)
-                sys.exit(1)
-
-            # Show filtering results
-            if len(filtered_ticker_list) < len(ticker_list):
-                reduction_pct = 100 * (1 - len(filtered_ticker_list) / len(ticker_list))
-                typer.echo(
-                    f"\n✅ Filtering complete: {len(filtered_ticker_list)}/{len(ticker_list)} "
-                    f"instruments selected ({reduction_pct:.0f}% reduction)"
-                )
-                typer.echo(f"   Estimated cost savings: ~{reduction_pct:.0f}% lower API usage")
-
-            # Stage 2: LLM analysis on filtered list
-            typer.echo()
             signals, portfolio_manager = _run_llm_analysis(
                 filtered_ticker_list,
                 config_obj,
@@ -744,15 +791,16 @@ def analyze(
             )
             analysis_mode = "llm"
         else:
-            typer.echo(
-                "\n📊 Using rule-based analysis (technical indicators & fundamental metrics)"
-            )
+            typer.echo("\n📊 Stage 2: Rule-based analysis")
+            typer.echo("   Using technical indicators & fundamental metrics")
             # Pass historical context if available
             analysis_context = {}
             if historical_context_data:
                 analysis_context["historical_contexts"] = historical_context_data
                 analysis_context["analysis_date"] = historical_date
-            signals, portfolio_manager = pipeline.run_analysis(ticker_list, analysis_context)
+            signals, portfolio_manager = pipeline.run_analysis(
+                filtered_ticker_list, analysis_context
+            )
             analysis_mode = "rule_based"
         signals_count = len(signals)
 
@@ -1806,6 +1854,35 @@ def performance_report(
         logger.error(f"Error generating performance report: {e}", exc_info=True)
         typer.echo(f"\n❌ Error: {e}", err=True)
         raise typer.Exit(code=1)
+
+
+@app.command()
+def list_strategies() -> None:
+    """List all available filtering strategies with descriptions.
+
+    Shows:
+    - Strategy name (to use with --strategy flag)
+    - Description of what the strategy detects
+    - Suitable use cases
+
+    Example:
+        nordinvest list-strategies
+    """
+    from src.filtering.strategies import list_strategies as get_strategies
+
+    typer.echo("\n📊 Available Filtering Strategies\n")
+    typer.echo("=" * 80)
+
+    strategies = get_strategies()
+
+    for name, description in strategies:
+        typer.echo(f"\n🔹 {name.upper()}")
+        typer.echo(f"   {description}")
+
+    typer.echo(f"\n{'=' * 80}")
+    typer.echo(f"\nTotal strategies: {len(strategies)}")
+    typer.echo("\nUsage: nordinvest analyze --strategy <strategy_name>")
+    typer.echo("Example: nordinvest analyze --group us_tech_software --strategy momentum\n")
 
 
 @app.callback()
