@@ -373,7 +373,7 @@ class WebsiteGenerator:
 
         from src.data.models import Recommendation, Ticker
 
-        with Session(self.recommendations_repo.engine) as session:
+        with Session(self.recommendations_repo.db_manager.engine) as session:
             # Get all unique tickers
             tickers_stmt = select(Ticker.symbol).distinct()
             tickers = session.exec(tickers_stmt).all()
@@ -383,7 +383,7 @@ class WebsiteGenerator:
                 generated_tags[ticker_symbol] = tag_path
 
             # Get all unique recommendation types
-            rec_types_stmt = select(Recommendation.recommendation).distinct()
+            rec_types_stmt = select(Recommendation.signal_type).distinct()
             rec_types = session.exec(rec_types_stmt).all()
 
             for rec_type in rec_types:
@@ -439,10 +439,10 @@ class WebsiteGenerator:
         for rec in recommendations[:20]:  # Show last 20
             lines.append(
                 f"| {rec.analysis_date} | "
-                f"**{rec.recommendation.upper()}** | "
+                f"**{rec.signal_type.upper()}** | "
                 f"{rec.confidence}% | "
-                f"${rec.price_at_analysis:.2f} | "
-                f"{rec.mode} |"
+                f"${rec.current_price:.2f} | "
+                f"{rec.analysis_mode} |"
             )
 
         lines.extend(
@@ -471,7 +471,7 @@ class WebsiteGenerator:
         stmt = (
             select(Recommendation, Ticker)
             .join(Ticker)
-            .where(Recommendation.recommendation == signal_type)
+            .where(Recommendation.signal_type == signal_type)
             .order_by(Recommendation.analysis_date.desc())
         )
         results = session.exec(stmt).all()
@@ -533,9 +533,9 @@ class WebsiteGenerator:
         # Group by recommendation type
         type_groups = {}
         for rec, ticker in results:
-            if rec.recommendation not in type_groups:
-                type_groups[rec.recommendation] = []
-            type_groups[rec.recommendation].append((ticker.symbol, rec))
+            if rec.signal_type not in type_groups:
+                type_groups[rec.signal_type] = []
+            type_groups[rec.signal_type].append((ticker.symbol, rec))
 
         lines = [
             f"# Analysis - {date_str}",
@@ -556,7 +556,7 @@ class WebsiteGenerator:
             for ticker_symbol, rec in items:
                 lines.append(
                     f"- **{ticker_symbol}**: {rec.confidence}% confidence, "
-                    f"${rec.price_at_analysis:.2f} "
+                    f"${rec.current_price:.2f} "
                     f"([details](../tickers/{ticker_symbol}.md))"
                 )
 
@@ -577,14 +577,184 @@ class WebsiteGenerator:
 
         return file_path
 
+    def generate_section_indexes(self):
+        """Generate index pages for Reports, Tickers, and Tags sections."""
+        self._generate_reports_index()
+        self._generate_tickers_index()
+        self._generate_tags_index()
+        logger.info("Generated section index pages")
+
+    def _generate_reports_index(self):
+        """Generate index page for Reports section."""
+        reports_dir = self.output_dir / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+
+        # Get all report files
+        report_files = sorted(reports_dir.glob("*.md"), reverse=True)
+
+        lines = [
+            "# Analysis Reports",
+            "",
+            "Daily market analysis reports with investment signals and recommendations.",
+            "",
+        ]
+
+        if report_files:
+            lines.extend(
+                [
+                    "## Recent Reports",
+                    "",
+                ]
+            )
+            for report_file in report_files:
+                if report_file.name == "index.md":
+                    continue
+                date_str = report_file.stem
+                lines.append(f"- [{date_str}]({report_file.name})")
+            lines.append("")
+        else:
+            lines.extend(
+                [
+                    "No reports available yet. Reports are generated when you run analysis with the `--publish` flag or use the `publish` command.",
+                    "",
+                ]
+            )
+
+        index_path = reports_dir / "index.md"
+        with open(index_path, "w") as f:
+            f.write("\n".join(lines))
+
+    def _generate_tickers_index(self):
+        """Generate index page for Tickers section."""
+        tickers_dir = self.output_dir / "tickers"
+        tickers_dir.mkdir(parents=True, exist_ok=True)
+
+        # Get all ticker files
+        ticker_files = sorted(tickers_dir.glob("*.md"))
+
+        lines = [
+            "# Ticker Analysis",
+            "",
+            "Historical analysis and signals for individual stocks.",
+            "",
+        ]
+
+        if ticker_files:
+            lines.extend(
+                [
+                    "## Available Tickers",
+                    "",
+                ]
+            )
+            for ticker_file in ticker_files:
+                if ticker_file.name == "index.md":
+                    continue
+                ticker = ticker_file.stem
+                lines.append(f"- [{ticker}]({ticker_file.name})")
+            lines.append("")
+        else:
+            lines.extend(
+                [
+                    "No ticker pages available yet.",
+                    "",
+                ]
+            )
+
+        index_path = tickers_dir / "index.md"
+        with open(index_path, "w") as f:
+            f.write("\n".join(lines))
+
+    def _generate_tags_index(self):
+        """Generate index page for Tags section."""
+        tags_dir = self.output_dir / "tags"
+        tags_dir.mkdir(parents=True, exist_ok=True)
+
+        # Get all tag files
+        tag_files = sorted(tags_dir.glob("*.md"))
+
+        lines = [
+            "# Tags",
+            "",
+            "Browse analysis by ticker, signal type, or date.",
+            "",
+        ]
+
+        if tag_files:
+            # Separate by type
+            ticker_tags = []
+            signal_tags = []
+            date_tags = []
+
+            for tag_file in tag_files:
+                if tag_file.name == "index.md" or tag_file.name == ".pages":
+                    continue
+                tag_name = tag_file.stem
+
+                # Categorize
+                if tag_name[0].isdigit():  # Date tags start with year
+                    date_tags.append(tag_name)
+                elif tag_name.isupper():  # Ticker symbols are uppercase
+                    ticker_tags.append(tag_name)
+                else:  # Signal types
+                    signal_tags.append(tag_name)
+
+            if ticker_tags:
+                lines.extend(
+                    [
+                        "## By Ticker",
+                        "",
+                    ]
+                )
+                for tag in sorted(ticker_tags):
+                    lines.append(f"- [{tag}]({tag}.md)")
+                lines.append("")
+
+            if signal_tags:
+                lines.extend(
+                    [
+                        "## By Signal Type",
+                        "",
+                    ]
+                )
+                for tag in sorted(signal_tags):
+                    display_name = tag.replace("_", " ").title()
+                    lines.append(f"- [{display_name}]({tag}.md)")
+                lines.append("")
+
+            if date_tags:
+                lines.extend(
+                    [
+                        "## By Date",
+                        "",
+                    ]
+                )
+                for tag in sorted(date_tags, reverse=True):
+                    lines.append(f"- [{tag}]({tag}.md)")
+                lines.append("")
+        else:
+            lines.extend(
+                [
+                    "No tags available yet.",
+                    "",
+                ]
+            )
+
+        index_path = tags_dir / "index.md"
+        with open(index_path, "w") as f:
+            f.write("\n".join(lines))
+
     def update_navigation(self):
         """Update .pages files for navigation."""
+        # Generate section index pages first
+        self.generate_section_indexes()
+
         # Create reports/.pages
         reports_pages = self.output_dir / "reports" / ".pages"
         reports_pages.parent.mkdir(parents=True, exist_ok=True)
         with open(reports_pages, "w") as f:
             f.write("title: Reports\n")
             f.write("nav:\n")
+            f.write("  - index.md\n")
             f.write("  - ...\n")  # Auto-discover all markdown files
 
         # Create tickers/.pages
@@ -593,6 +763,7 @@ class WebsiteGenerator:
         with open(tickers_pages, "w") as f:
             f.write("title: Tickers\n")
             f.write("nav:\n")
+            f.write("  - index.md\n")
             f.write("  - ...\n")
 
         # Create tags/.pages
@@ -601,6 +772,7 @@ class WebsiteGenerator:
         with open(tags_pages, "w") as f:
             f.write("title: Tags\n")
             f.write("nav:\n")
+            f.write("  - index.md\n")
             f.write("  - ...\n")
 
         logger.info("Updated navigation files")
