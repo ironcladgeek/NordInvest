@@ -283,15 +283,17 @@ class PriceFetcherTool(BaseTool):
                 )
 
         # Read from unified storage (this will use cached data if we already have the full range)
-        # If start_date is None (period-based request), read all available data
-        # Also read all data if we used days_back (to get full trading days, not calendar filtered)
-        if start_date is None or (period and not needs_fetch):
+        # When using period-based fetching, ALWAYS read all available data (no date filtering)
+        # This ensures we get the full trading days, not calendar-day filtered data
+        if period or start_date is None:
             df = pm.get_prices(ticker)
             logger.debug(
-                f"Reading all available prices for {ticker} (period-based or full cache request)"
+                f"Reading all available prices for {ticker} "
+                f"(period-based: {period is not None}, start_date is None: {start_date is None})"
             )
         else:
             df = pm.get_prices(ticker, start_date=start_date, end_date=end_date)
+            logger.debug(f"Reading filtered prices for {ticker} from {start_date} to {end_date}")
 
         if df.empty:
             # If we just fetched successfully but got no data in our range, get nearest available data
