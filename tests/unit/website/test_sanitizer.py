@@ -81,6 +81,7 @@ def sample_report():
         strong_signals_count=1,
         moderate_signals_count=0,
         disclaimers=["Test disclaimer"],
+        data_sources=["test_source"],
     )
 
 
@@ -196,6 +197,7 @@ class TestSanitizer:
             strong_signals_count=0,
             moderate_signals_count=0,
             disclaimers=[],
+            data_sources=[],
         )
         sanitized = sanitize_report_for_web(report)
 
@@ -221,6 +223,7 @@ class TestSanitizer:
             strong_signals_count=0,
             moderate_signals_count=0,
             disclaimers=[],
+            data_sources=[],
         )
 
         sanitized = sanitize_report_for_web(report)
@@ -249,6 +252,7 @@ class TestSanitizer:
             strong_signals_count=1,
             moderate_signals_count=0,
             disclaimers=[],
+            data_sources=[],
         )
 
         sanitized = sanitize_report_for_web(report)

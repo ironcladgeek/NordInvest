@@ -136,7 +136,7 @@ class TestWebsiteGenerator:
         assert "2025-12-10" in content
         assert "AAPL" in content
         assert "NVDA" in content
-        assert "STRONG_BUY" in content
+        assert "STRONG BUY" in content  # Note: space not underscore
         assert "BUY" in content
 
         # Check frontmatter tags
@@ -145,31 +145,45 @@ class TestWebsiteGenerator:
 
     def test_generate_ticker_page(self, generator, test_db_path, temp_output_dir):
         """Test ticker page generation."""
-        # First add a recommendation to database
-        from src.data.repository import RecommendationsRepository
+        # Use generator's repository instances to ensure same DB connection
+        from src.data.repository import RunSessionRepository
 
-        repo = RecommendationsRepository(test_db_path)
+        # Create a run session first
+        session_repo = RunSessionRepository(test_db_path)
+        session_id = session_repo.create_session(
+            analysis_mode="test",
+            analyzed_category="test_category",
+        )
 
+        # Now store the recommendation using generator's repo
         signal = create_test_signal(ticker="AAPL", recommendation=Recommendation.BUY)
 
-        repo.store_recommendation(
+        rec_id = generator.recommendations_repo.store_recommendation(
             signal=signal,
-            run_session_id=1,
+            run_session_id=session_id,
             analysis_mode="test",
             llm_model=None,
+        )
+
+        # Verify recommendation was stored
+        assert rec_id is not None
+        stored_recs = generator.recommendations_repo.get_recommendations_by_ticker("AAPL")
+        assert len(stored_recs) > 0, (
+            f"No recommendations found for AAPL after storing. DB: {test_db_path}"
         )
 
         # Generate ticker page
         ticker_path = generator.generate_ticker_page("AAPL")
 
         # Check file was created
+        assert ticker_path is not None
         assert ticker_path.exists()
         assert ticker_path.parent == temp_output_dir / "tickers"
 
         # Check content
         content = ticker_path.read_text()
         assert "AAPL" in content
-        assert "BUY" in content
+        assert "BUY" in content or "Buy" in content
         assert "90" in content  # confidence
 
     def test_generate_index_page(self, generator, temp_output_dir):
@@ -208,9 +222,13 @@ class TestWebsiteGenerator:
         signal = sample_signals[0]
         formatted = generator._format_signal(signal, include_details=True)
 
-        assert signal.ticker in formatted
-        assert str(signal.confidence) in formatted
-        assert signal.recommendation.value in formatted.lower()
+        # formatted is a list of strings, check if ticker appears in any line
+        formatted_text = "\n".join(formatted)
+        assert signal.ticker in formatted_text
+        assert str(signal.confidence) in formatted_text
+        # Check for spaced version since .upper().replace('_', ' ') converts to space
+        expected_rec = signal.recommendation.value.replace("_", " ")
+        assert expected_rec in formatted_text.lower()
 
     def test_generate_report_with_empty_signals(self, generator):
         """Test report generation with empty signals list."""

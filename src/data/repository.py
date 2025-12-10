@@ -946,14 +946,14 @@ class RecommendationsRepository:
                         {
                             "id": rec.id,
                             "ticker": ticker,
-                            "recommendation": rec.recommendation,
+                            "recommendation": rec.signal_type,
                             "confidence": rec.confidence,
                             "current_price": rec.current_price,
                             "analysis_date": rec.analysis_date.isoformat()
                             if rec.analysis_date
                             else None,
                             "analysis_mode": rec.analysis_mode,
-                            "reasoning": rec.reasoning,
+                            "reasoning": rec.rationale,
                         }
                     )
 
