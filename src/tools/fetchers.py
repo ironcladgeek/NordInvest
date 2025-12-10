@@ -471,6 +471,7 @@ class FinancialDataFetcherTool(BaseTool):
             primary_provider="alpha_vantage",
             backup_providers=["yahoo_finance", "finnhub"],
             db_path=db_path,
+            historical_data_lookback_days=730,  # Default value
         )
 
         # Keep direct access to specialized providers

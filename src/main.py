@@ -580,6 +580,7 @@ def analyze(
             primary_provider=config_obj.data.primary_provider,
             backup_providers=config_obj.data.backup_providers,
             db_path=config_obj.database.db_path if config_obj.database.enabled else None,
+            historical_data_lookback_days=config_obj.analysis.historical_data_lookback_days,
         )
 
         # Setup test mode if enabled
@@ -708,7 +709,9 @@ def analyze(
 
             typer.echo("\n📅 Preparing historical data fetcher...")
             # Get the primary data provider
-            provider_manager = ProviderManager()
+            provider_manager = ProviderManager(
+                historical_data_lookback_days=config_obj.analysis.historical_data_lookback_days,
+            )
             primary_provider = provider_manager.primary_provider
             # Pass cache_manager to enable historical cache retrieval
             historical_fetcher = HistoricalDataFetcher(
@@ -1026,6 +1029,7 @@ def report(
             primary_provider=config_obj.data.primary_provider,
             backup_providers=config_obj.data.backup_providers,
             db_path=config_obj.database.db_path if config_obj.database.enabled else None,
+            historical_data_lookback_days=config_obj.analysis.historical_data_lookback_days,
         )
 
         pipeline = AnalysisPipeline(
@@ -1380,6 +1384,7 @@ def download_prices(
             primary_provider=config_obj.data.primary_provider,
             backup_providers=config_obj.data.backup_providers,
             db_path=config_obj.database.db_path if config_obj.database.enabled else None,
+            historical_data_lookback_days=config_obj.analysis.historical_data_lookback_days,
         )
 
         # Initialize rate limiter (conservative: 5 requests per second)
@@ -1612,6 +1617,7 @@ def track_performance(
             primary_provider=config_obj.data.primary_provider,
             backup_providers=config_obj.data.backup_providers,
             db_path=db_path,
+            historical_data_lookback_days=config_obj.analysis.historical_data_lookback_days,
         )
 
         # Parse signal types

@@ -24,6 +24,7 @@ class ProviderManager:
         primary_provider: str = "yahoo_finance",
         backup_providers: list[str] = None,
         db_path: Path | str | None = None,
+        historical_data_lookback_days: int = 730,
     ):
         """Initialize provider manager.
 
@@ -31,9 +32,11 @@ class ProviderManager:
             primary_provider: Primary provider name (default: yahoo_finance for price data)
             backup_providers: List of backup provider names (default: [alpha_vantage] for news/fundamentals)
             db_path: Optional path to database for storing analyst ratings
+            historical_data_lookback_days: Default lookback period in days (default: 730)
         """
         self.primary_provider_name = primary_provider
         self.backup_provider_names = backup_providers or ["alpha_vantage"]
+        self.historical_data_lookback_days = historical_data_lookback_days
 
         # Initialize providers
         self.primary_provider = self._create_provider(primary_provider)
@@ -108,9 +111,8 @@ class ProviderManager:
         providers_to_try = [self.primary_provider] + self.backup_providers
         errors = []
 
-        # Calculate period in days for Yahoo Finance (prefers period over date range)
-        days_diff = (end_date - start_date).days
-        period = f"{days_diff}d" if days_diff > 0 else "1d"
+        # Use configured lookback days for Yahoo Finance period parameter
+        period = f"{self.historical_data_lookback_days}d"
 
         for provider in providers_to_try:
             if not provider.is_available:
@@ -121,8 +123,7 @@ class ProviderManager:
                 # Use period parameter for Yahoo Finance (more reliable and returns exact trading days)
                 if provider.name == "yahoo_finance":
                     logger.debug(
-                        f"Fetching prices for {ticker} using {provider.name} "
-                        f"(period={period}, ~{days_diff} days)"
+                        f"Fetching prices for {ticker} using {provider.name} (period={period})"
                     )
                     prices = provider.get_stock_prices(ticker, period=period)
                 else:
