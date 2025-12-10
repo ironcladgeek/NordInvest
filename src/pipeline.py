@@ -11,7 +11,10 @@ from src.analysis import (
     ReportGenerator,
     RiskAssessor,
 )
+from src.analysis.normalizer import AnalysisResultNormalizer
+from src.analysis.signal_creator import SignalCreator
 from src.cache.manager import CacheManager
+from src.config.schemas import Config
 from src.data.portfolio import PortfolioState
 from src.data.provider_manager import ProviderManager
 from src.utils.llm_check import check_llm_configuration
@@ -25,7 +28,7 @@ class AnalysisPipeline:
 
     def __init__(
         self,
-        config: dict[str, Any],
+        config: Config,
         cache_manager: CacheManager,
         portfolio_manager: PortfolioState | None = None,
         llm_provider: str | None = None,
@@ -37,7 +40,7 @@ class AnalysisPipeline:
         """Initialize analysis pipeline.
 
         Args:
-            config: Configuration dictionary with analysis parameters
+            config: Configuration object with all settings
             cache_manager: Cache manager for data caching
             portfolio_manager: Optional portfolio state manager for position tracking
             llm_provider: Optional LLM provider to check configuration for
@@ -62,21 +65,22 @@ class AnalysisPipeline:
 
         # Initialize components
         self.crew = AnalysisCrew(
-            llm_provider=llm_provider, test_mode_config=test_mode_config, db_path=db_path
+            llm_provider=llm_provider,
+            test_mode_config=test_mode_config,
+            db_path=db_path,
+            config=config,
         )
         self.risk_assessor = RiskAssessor(
-            volatility_threshold_high=config.get("risk_volatility_high", 3.0),
-            volatility_threshold_very_high=config.get("risk_volatility_very_high", 5.0),
+            volatility_threshold_high=3.0,
+            volatility_threshold_very_high=5.0,
         )
         self.allocation_engine = AllocationEngine(
-            total_capital=config.get("capital_starting", 2000),
-            monthly_deposit=config.get("capital_monthly_deposit", 500),
-            max_position_size_pct=config.get("max_position_size_pct", 10),
-            max_sector_concentration_pct=config.get("max_sector_concentration_pct", 20),
+            total_capital=config.capital.starting_capital_eur,
+            monthly_deposit=config.capital.monthly_deposit_eur,
+            max_position_size_pct=config.risk.max_position_size_percent,
+            max_sector_concentration_pct=config.risk.max_sector_concentration_percent,
         )
-        self.report_generator = ReportGenerator(
-            include_disclaimers=config.get("include_disclaimers", True)
-        )
+        self.report_generator = ReportGenerator(include_disclaimers=True)
 
         # Check and log LLM configuration status
         llm_configured, provider = check_llm_configuration(llm_provider)
@@ -107,6 +111,13 @@ class AnalysisPipeline:
         """
         context = context or {}
         context["tickers"] = tickers
+        # Add configured lookback period to context for agents
+        if hasattr(self.config, "analysis") and hasattr(
+            self.config.analysis, "historical_data_lookback_days"
+        ):
+            context["historical_data_lookback_days"] = (
+                self.config.analysis.historical_data_lookback_days
+            )
 
         logger.debug(f"Starting analysis pipeline for {len(tickers)} instruments")
 
@@ -123,12 +134,37 @@ class AnalysisPipeline:
 
             analysis_results = scan_result.get("analysis_results", [])
 
-            # Phase 2: Convert to signals with risk assessment
-            logger.debug("Phase 2: Assessing risks and creating signals")
+            # Phase 2: Normalize results and create signals with risk assessment
+            logger.debug("Phase 2: Normalizing analysis results and creating signals")
             portfolio_context = self.portfolio_manager.to_dict() if self.portfolio_manager else {}
 
+            # Initialize SignalCreator for unified signal creation
+            signal_creator = SignalCreator(
+                cache_manager=self.cache_manager,
+                provider_manager=self.provider_manager,
+                risk_assessor=self.risk_assessor,
+            )
+
+            # Extract analysis_date from context for historical analysis support
+            analysis_date = context.get("analysis_date") if context else None
+
             for analysis in analysis_results:
-                signal = self._create_investment_signal(analysis, portfolio_context, context)
+                # Normalize to unified structure for consistent processing
+                try:
+                    unified_result = AnalysisResultNormalizer.normalize_rule_based_result(analysis)
+                    logger.debug(f"Normalized rule-based result for {unified_result.ticker}")
+                except Exception as e:
+                    ticker = analysis.get("ticker", "UNKNOWN")
+                    logger.warning(f"Failed to normalize analysis for {ticker}: {e}")
+                    continue  # Skip if normalization fails
+
+                # Create signal using SignalCreator (unified for both LLM and rule-based)
+                signal = signal_creator.create_signal(
+                    result=unified_result,
+                    portfolio_context=portfolio_context,
+                    analysis_date=analysis_date,
+                )
+
                 if signal:
                     signals.append(signal)
 
@@ -218,7 +254,7 @@ class AnalysisPipeline:
                 )
 
             if not signals:
-                logger.warning(f"No signals found in database for specified criteria")
+                logger.warning("No signals found in database for specified criteria")
                 signals = []  # Empty list for report generation
 
         logger.debug(f"Generating daily report with {len(signals)} signals from {data_source}")
@@ -308,195 +344,6 @@ class AnalysisPipeline:
         # Already a string
         logger.debug(f"Using analysis_date from context (string): {analysis_date}")
         return str(analysis_date)
-
-    def _create_investment_signal(
-        self,
-        analysis: dict[str, Any],
-        portfolio_context: dict[str, Any],
-        context: dict[str, Any] | None = None,
-    ) -> InvestmentSignal | None:
-        """Convert analysis result to investment signal with risk assessment.
-
-        Args:
-            analysis: Analysis result from crew
-            portfolio_context: Current portfolio state
-            context: Optional context with analysis_date for backtesting
-
-        Returns:
-            Investment signal or None if creation failed
-        """
-        try:
-            ticker = analysis.get("ticker", "UNKNOWN")
-            final_score = analysis.get("final_score", 50)
-            confidence = analysis.get("confidence", 50)
-            recommendation = analysis.get("final_recommendation", "hold")
-
-            # Extract component scores
-            analysis_data = analysis.get("analysis", {})
-            technical_score = analysis_data.get("technical", {}).get("technical_score", 50)
-            fundamental_score = analysis_data.get("fundamental", {}).get("fundamental_score", 50)
-            sentiment_score = analysis_data.get("sentiment", {}).get("sentiment_score", 50)
-
-            # Get analysis date to determine if we need historical or current price
-            analysis_date_str = self._get_analysis_date(context)
-            analysis_date = datetime.strptime(analysis_date_str, "%Y-%m-%d").date()
-            is_historical = analysis_date < date.today()
-
-            # Fetch actual current price and currency from cache or provider
-            current_price = None
-            currency = "USD"
-
-            if is_historical:
-                # For historical analysis, fetch price as of analysis_date
-                logger.debug(
-                    f"Historical analysis for {ticker} on {analysis_date}, "
-                    f"fetching price as of that date"
-                )
-
-                # Try cache first (historical data might be cached)
-                try:
-                    # Cache might have historical prices - look for price data around that date
-                    latest_price = self.cache_manager.get_latest_price(ticker)
-                    if latest_price:
-                        # This is current price from cache, not historical
-                        # We'll need to fetch historical from provider
-                        logger.debug(
-                            f"Cache has current price, but we need historical for {analysis_date}"
-                        )
-                except Exception as e:
-                    logger.debug(f"Cache lookup failed for {ticker}: {e}")
-
-                # Fetch historical price from provider
-                if current_price is None and self.provider_manager:
-                    try:
-                        # Fetch prices for a small window around analysis_date
-                        from datetime import timedelta
-
-                        start_date = datetime.combine(analysis_date, datetime.min.time())
-                        end_date = datetime.combine(
-                            analysis_date + timedelta(days=1), datetime.min.time()
-                        )
-
-                        prices = self.provider_manager.get_stock_prices(
-                            ticker, start_date, end_date
-                        )
-                        if prices:
-                            # Get the price closest to analysis_date
-                            for price in prices:
-                                if price.date == analysis_date:
-                                    current_price = price.close_price
-                                    currency = price.currency
-                                    logger.debug(
-                                        f"Got historical price for {ticker} on {analysis_date}: "
-                                        f"${current_price}"
-                                    )
-                                    break
-                            # If exact date not found, use the closest one
-                            if current_price is None and prices:
-                                current_price = prices[0].close_price
-                                currency = prices[0].currency
-                                logger.warning(
-                                    f"Exact price for {ticker} on {analysis_date} not found, "
-                                    f"using closest: ${current_price}"
-                                )
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to fetch historical price for {ticker} on {analysis_date}: {e}"
-                        )
-            else:
-                # For current analysis, use latest price
-                logger.debug(f"Current analysis for {ticker}, fetching latest price")
-
-                # Try cache first
-                try:
-                    latest_price = self.cache_manager.get_latest_price(ticker)
-                    if latest_price:
-                        current_price = latest_price.close_price
-                        currency = latest_price.currency
-                        logger.debug(f"Got price for {ticker} from cache: ${current_price}")
-                except Exception as e:
-                    logger.debug(f"Cache lookup failed for {ticker}: {e}")
-
-                # If cache didn't have it, try provider
-                if current_price is None and self.provider_manager:
-                    try:
-                        price_obj = self.provider_manager.get_latest_price(ticker)
-                        if price_obj:
-                            current_price = price_obj.close_price
-                            currency = price_obj.currency
-                            logger.debug(f"Got price for {ticker} from provider: ${current_price}")
-                    except Exception as e:
-                        logger.warning(f"Provider lookup failed for {ticker}: {e}")
-
-            # If we still don't have a price, we cannot create a valid signal
-            if current_price is None or current_price <= 0:
-                logger.error(
-                    f"Cannot create signal for {ticker}: no valid current price available "
-                    f"for {analysis_date}. Ensure price data is cached or provider_manager is configured."
-                )
-                return None
-
-            current_price = float(current_price)
-
-            # Assess risks
-            signal_dict = {
-                "ticker": ticker,
-                "final_score": final_score,
-                "confidence": confidence,
-                "scores": {
-                    "technical": technical_score,
-                    "fundamental": fundamental_score,
-                    "sentiment": sentiment_score,
-                },
-                "volatility_pct": 2.0,  # Placeholder
-                "estimated_daily_volume": 100000,  # Placeholder
-                "sector": "Unknown",  # Would come from metadata
-            }
-
-            risk_assessment = self.risk_assessor.assess_signal(signal_dict, portfolio_context)
-
-            # Calculate expected returns (placeholder)
-            expected_return_min = (final_score - 50) * 0.2  # -10% to +10%
-            expected_return_max = expected_return_min + 10
-
-            # Create signal
-            signal = InvestmentSignal(
-                ticker=ticker,
-                name=analysis.get("ticker", "Unknown"),
-                market="unknown",
-                sector=None,
-                current_price=current_price,
-                currency=currency,
-                scores=analysis_data.get("synthesis", {}).get("component_scores")
-                or {
-                    "technical": technical_score,
-                    "fundamental": fundamental_score,
-                    "sentiment": sentiment_score,
-                },
-                final_score=final_score,
-                recommendation=recommendation,
-                confidence=confidence,
-                time_horizon="3M",
-                expected_return_min=expected_return_min,
-                expected_return_max=expected_return_max,
-                key_reasons=[
-                    analysis.get("final_recommendation", "hold").upper(),
-                    f"Confidence: {confidence:.2f}%",
-                    f"Technical: {technical_score:.2f}/100",
-                    f"Fundamental: {fundamental_score:.2f}/100",
-                    f"Sentiment: {sentiment_score:.2f}/100",
-                ],
-                risk=risk_assessment,
-                generated_at=datetime.now(),
-                analysis_date=self._get_analysis_date(context),
-            )
-
-            logger.debug(f"Created signal for {ticker}: {recommendation} ({confidence}%)")
-            return signal
-
-        except Exception as e:
-            logger.error(f"Error creating signal from analysis: {e}")
-            return None
 
     @staticmethod
     def _signal_to_dict(signal: InvestmentSignal) -> dict[str, Any]:

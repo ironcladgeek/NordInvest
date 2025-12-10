@@ -13,6 +13,8 @@ from src.agents.crewai_agents import CrewAIAgentFactory, CrewAITaskFactory
 from src.agents.hybrid import HybridAnalysisAgent, HybridAnalysisCrew
 from src.agents.scanner import MarketScannerAgent
 from src.agents.sentiment import SentimentAgent
+from src.analysis.models import UnifiedAnalysisResult
+from src.analysis.normalizer import AnalysisResultNormalizer
 from src.config.schemas import LLMConfig
 from src.llm.token_tracker import TokenTracker
 from src.llm.tools import CrewAIToolAdapter
@@ -32,6 +34,7 @@ class LLMAnalysisOrchestrator:
         debug_dir: Optional[Path] = None,
         progress_callback: Optional[callable] = None,
         db_path: Optional[str] = None,
+        config=None,
     ):
         """Initialize analysis orchestrator.
 
@@ -42,6 +45,7 @@ class LLMAnalysisOrchestrator:
             debug_dir: Directory to save debug outputs (inputs/outputs from LLM)
             progress_callback: Optional callback function(message: str) for progress updates
             db_path: Optional path to database for storing analyst ratings
+            config: Full configuration object for accessing analysis settings
         """
         self.llm_config = llm_config or LLMConfig()
         self.token_tracker = token_tracker
@@ -49,6 +53,7 @@ class LLMAnalysisOrchestrator:
         self.debug_dir = debug_dir
         self.progress_callback = progress_callback
         self.db_path = db_path
+        self.config = config
 
         # Create debug directory if needed
         if self.debug_dir:
@@ -58,7 +63,7 @@ class LLMAnalysisOrchestrator:
         # Initialize CrewAI components
         self.agent_factory = CrewAIAgentFactory(self.llm_config)
         self.task_factory = CrewAITaskFactory()
-        self.tool_adapter = CrewAIToolAdapter(db_path=db_path)
+        self.tool_adapter = CrewAIToolAdapter(db_path=db_path, config=config)
 
         # Initialize hybrid agents with fallback
         self.hybrid_agents = self._create_hybrid_agents()
@@ -83,7 +88,7 @@ class LLMAnalysisOrchestrator:
         synthesizer_crew = self.agent_factory.create_signal_synthesizer_agent()
 
         # Create fallback rule-based agents
-        market_scanner_fallback = MarketScannerAgent()
+        market_scanner_fallback = MarketScannerAgent(config=self.config)
         technical_fallback = TechnicalAnalysisAgent()
         fundamental_fallback = FundamentalAnalysisAgent(db_path=self.db_path)
         sentiment_fallback = SentimentAgent()
@@ -113,6 +118,12 @@ class LLMAnalysisOrchestrator:
                 fallback_agent=sentiment_fallback,
                 token_tracker=self.token_tracker,
                 enable_fallback=self.enable_fallback,
+            ),
+            "synthesizer": HybridAnalysisAgent(
+                crewai_agent=synthesizer_crew,
+                fallback_agent=None,
+                token_tracker=self.token_tracker,
+                enable_fallback=False,
             ),
         }
 
@@ -153,7 +164,7 @@ class LLMAnalysisOrchestrator:
         ticker: str,
         context: dict[str, Any] = None,
         progress_callback: Optional[callable] = None,
-    ) -> dict[str, Any]:
+    ) -> UnifiedAnalysisResult | None:
         """Perform comprehensive analysis of a single instrument.
 
         Args:
@@ -162,10 +173,20 @@ class LLMAnalysisOrchestrator:
             progress_callback: Optional callback for progress updates
 
         Returns:
-            Analysis results from all agents including synthesis
+            UnifiedAnalysisResult with normalized data or None if analysis failed
         """
         context = context or {}
         context["ticker"] = ticker
+
+        # Inject config values into context for agents to access
+        if self.config:
+            if hasattr(self.config.analysis, "historical_data_lookback_days"):
+                context["historical_data_lookback_days"] = (
+                    self.config.analysis.historical_data_lookback_days
+                )
+                logger.debug(
+                    f"Set historical_data_lookback_days in context: {context['historical_data_lookback_days']}"
+                )
 
         logger.info(f"Starting comprehensive analysis for {ticker}")
 
@@ -237,6 +258,21 @@ class LLMAnalysisOrchestrator:
 
             # Add synthesis to results
             analysis_results["results"]["synthesis"] = synthesis_result
+
+            # Normalize to unified structure for consistent output
+            try:
+                unified_result = AnalysisResultNormalizer.normalize_llm_result(
+                    ticker=ticker,
+                    technical_result=technical_results.get("result", {}),
+                    fundamental_result=fundamental_results.get("result", {}),
+                    sentiment_result=sentiment_results.get("result", {}),
+                    synthesis_result=synthesis_result,
+                )
+                logger.info(f"Analysis complete for {ticker}, normalized to unified structure")
+                return unified_result
+            except Exception as e:
+                logger.error(f"Failed to normalize LLM results for {ticker}: {e}", exc_info=True)
+                return None
         else:
             logger.warning(
                 f"Skipping synthesis for {ticker} - not all analyses succeeded. "
@@ -244,14 +280,7 @@ class LLMAnalysisOrchestrator:
                 f"Fundamental: {fundamental_results.get('status')}, "
                 f"Sentiment: {sentiment_results.get('status')}"
             )
-            analysis_results["results"]["synthesis"] = {
-                "status": "skipped",
-                "reason": "prerequisite analyses failed",
-            }
-
-        logger.info(f"Analysis complete for {ticker}")
-
-        return analysis_results
+            return None
 
     def synthesize_signal(
         self,

@@ -4,6 +4,12 @@ from typing import Any, Optional
 
 from crewai import Agent, Task
 
+from src.agents.output_models import (
+    FundamentalAnalysisOutput,
+    SentimentAnalysisOutput,
+    SignalSynthesisOutput,
+    TechnicalAnalysisOutput,
+)
 from src.config.llm import initialize_llm_client
 from src.config.schemas import LLMConfig
 from src.utils.logging import get_logger
@@ -13,6 +19,18 @@ logger = get_logger(__name__)
 
 class CrewAIAgentFactory:
     """Factory for creating CrewAI-based agents."""
+
+    # Explicit instruction to use correct tool format (prevents <function_calls> format)
+    TOOL_FORMAT_INSTRUCTION = (
+        "\n\nCRITICAL: When using tools, you MUST use the exact format:\n"
+        "```\n"
+        "Thought: your reasoning\n"
+        "Action: tool name\n"
+        'Action Input: {"param": "value"}\n'
+        "```\n"
+        "NEVER use <function_calls> tags or any other format. "
+        "Wait for the Observation before continuing."
+    )
 
     def __init__(self, llm_config: Optional[LLMConfig] = None):
         """Initialize the factory with LLM configuration.
@@ -45,7 +63,7 @@ class CrewAIAgentFactory:
                 "patterns, and price movements that signal potential trading opportunities. "
                 "Your keen eye for detail helps identify instruments that deserve deeper analysis. "
                 "You consider both daily and weekly price movements, volume anomalies, and positions "
-                "at technical extremes."
+                "at technical extremes." + self.TOOL_FORMAT_INSTRUCTION
             ),
             tools=tools or [],
             llm=self.llm_client,
@@ -66,19 +84,27 @@ class CrewAIAgentFactory:
             role="Senior Technical Analyst",
             goal=(
                 "Interpret pre-calculated technical indicators to provide insights on "
-                "trend strength, momentum, support/resistance levels, and trading opportunities"
+                "trend strength, momentum, support/resistance levels, and trading opportunities. "
+                "Extract ALL available indicators including RSI, MACD (line/signal/histogram), "
+                "Bollinger Bands (upper/middle/lower), ATR, SMA (20/50), EMA (12/26), WMA, "
+                "ADX (with +DI/-DI), Stochastic (%K/%D), and Ichimoku Cloud components."
             ),
             backstory=(
                 "You are a skilled technical analyst with expertise in interpreting "
                 "chart patterns, moving averages, momentum indicators, and volume analysis. "
-                "You receive pre-calculated technical indicators (RSI, MACD, SMA, ATR, etc.) "
-                "and provide expert interpretation of what these signals mean. "
-                "You identify trend strength, potential reversals, overbought/oversold conditions, "
+                "You receive pre-calculated technical indicators from the Calculate Technical Indicators tool "
+                "and must extract ALL available indicator values into your structured output. "
+                "The tool provides comprehensive data including: RSI, MACD (line, signal, histogram), "
+                "Bollinger Bands (upper, middle, lower), ATR, moving averages (SMA 20/50, EMA 12/26, WMA 14), "
+                "ADX with directional indicators (+DI, -DI), Stochastic Oscillator (%K, %D), "
+                "and Ichimoku Cloud components (Tenkan, Kijun, Senkou A/B, Chikou). "
+                "CRITICAL: You must populate ALL indicator fields in your output schema with the values "
+                "from the tool - do not omit any available indicators. "
+                "After extracting all values, interpret what these signals mean: "
+                "identify trend strength, potential reversals, overbought/oversold conditions, "
                 "and support/resistance levels. Your analysis incorporates multiple timeframes "
-                "and helps traders make informed decisions based on price action. "
-                "You understand how different indicators complement each other and provide "
-                "holistic technical insights. Note: The mathematical calculations are already done - "
-                "your job is to interpret the signals and provide trading insights."
+                "and helps traders make informed decisions based on price action."
+                + self.TOOL_FORMAT_INSTRUCTION
             ),
             tools=tools or [],
             llm=self.llm_client,
@@ -108,7 +134,7 @@ class CrewAIAgentFactory:
                 "and valuation metrics (P/E, EV/EBITDA, P/B, PEG). "
                 "You can identify high-quality companies at reasonable valuations and weak "
                 "companies even if they appear cheap. You understand industry dynamics and "
-                "competitive positioning."
+                "competitive positioning." + self.TOOL_FORMAT_INSTRUCTION
             ),
             tools=tools or [],
             llm=self.llm_client,
@@ -140,6 +166,7 @@ class CrewAIAgentFactory:
                 "You understand how different types of news affect company valuations and stock prices, "
                 "and can identify whether sentiment represents rational analysis or emotional overreaction. "
                 "You excel at identifying key themes, catalysts, and sentiment trends from news coverage."
+                + self.TOOL_FORMAT_INSTRUCTION
             ),
             tools=tools or [],
             llm=self.llm_client,
@@ -240,29 +267,47 @@ class CrewAITaskFactory:
         """
         return Task(
             description=(
-                f"Interpret the pre-calculated technical indicators for {ticker}.\n"
+                f"Extract and interpret the pre-calculated technical indicators for {ticker}.\n"
                 f"\n"
-                f"IMPORTANT: Use the 'Calculate Technical Indicators' tool with ticker='{ticker}' "
-                f"to get the pre-computed technical analysis. This tool performs all mathematical "
-                f"calculations (SMA, RSI, MACD, ATR, volume trends) using rule-based algorithms.\n"
+                f"STEP 1: EXTRACT ALL INDICATOR VALUES\n"
+                f"Use the 'Calculate Technical Indicators' tool with ticker='{ticker}' to get "
+                f"comprehensive technical data. The tool returns ALL available indicators including:\n"
+                f"- RSI (rsi)\n"
+                f"- MACD components (macd_line, macd_signal, macd_histogram)\n"
+                f"- Bollinger Bands (bbands_20_upper, bbands_20_middle, bbands_20_lower)\n"
+                f"- ATR (atr_14)\n"
+                f"- Moving Averages (sma_20, sma_50, ema_12, ema_26, wma_14)\n"
+                f"- ADX with directional indicators (adx_14, adx_14_dmp, adx_14_dmn)\n"
+                f"- Stochastic (stoch_14_3_k, stoch_14_3_d)\n"
+                f"- Ichimoku Cloud (ichimoku_tenkan, ichimoku_kijun, ichimoku_senkou_a, ichimoku_senkou_b, ichimoku_chikou)\n"
                 f"\n"
-                f"Your job is to INTERPRET these calculated values:\n"
+                f"CRITICAL: You MUST extract ALL indicator values from the tool output and populate "
+                f"ALL corresponding fields in your TechnicalAnalysisOutput. Do not omit any indicators - "
+                f"extract every value the tool provides.\n"
+                f"\n"
+                f"STEP 2: INTERPRET THE INDICATORS\n"
+                f"After extracting all values, provide expert interpretation:\n"
                 f"1. Analyze the trend (is the price above/below key moving averages?)\n"
-                f"2. Assess momentum (what do RSI and MACD values indicate?)\n"
-                f"3. Identify overbought/oversold conditions (RSI > 70 or < 30?)\n"
-                f"4. Evaluate volume patterns (is there unusual volume?)\n"
-                f"5. Determine support/resistance levels from moving averages\n"
-                f"6. Identify potential entry/exit points\n"
-                f"7. Assess overall technical strength and provide a score (0-100)\n"
+                f"2. Assess momentum (what do RSI, MACD, and Stochastic values indicate?)\n"
+                f"3. Identify overbought/oversold conditions (RSI > 70 or < 30? Stochastic levels?)\n"
+                f"4. Evaluate Bollinger Band position (price near upper/lower band?)\n"
+                f"5. Assess trend strength using ADX (>25 = strong trend)\n"
+                f"6. Analyze Ichimoku Cloud signals (price vs cloud, cloud color)\n"
+                f"7. Determine support/resistance levels from moving averages\n"
+                f"8. Identify potential entry/exit points based on multiple indicators\n"
+                f"9. Assess overall technical strength and provide a score (0-100)\n"
                 f"\n"
-                f"Do NOT try to calculate indicators yourself - they are already calculated. "
-                f"Focus on interpretation and insight."
+                f"Do NOT calculate indicators yourself - they are pre-calculated. Your job is to "
+                f"extract ALL values and then provide expert interpretation."
             ),
             agent=agent,
             expected_output=(
-                "Technical analysis interpretation with trend assessment, momentum analysis, "
-                "signal interpretation, and technical score (0-100)"
+                "Complete TechnicalAnalysisOutput with ALL indicator fields populated (RSI, MACD components, "
+                "Bollinger Bands, ATR, all moving averages, ADX components, Stochastic components, and "
+                "Ichimoku Cloud components) plus trend assessment, momentum analysis, signal interpretation, "
+                "and technical score (0-100)"
             ),
+            output_pydantic=TechnicalAnalysisOutput,
         )
 
     @staticmethod
@@ -292,26 +337,49 @@ class CrewAITaskFactory:
                 f"1. Analyst Consensus - Professional analyst recommendations (strong buy/buy/hold/sell/strong sell)\n"
                 f"2. News Sentiment - Aggregated sentiment from news coverage (positive/negative/neutral %)\n"
                 f"3. Price Momentum - 30-day price change and trend direction\n"
+                f"4. Financial Metrics (from Yahoo Finance):\n"
+                f"   - Valuation: trailing_pe, forward_pe, price_to_book, price_to_sales, peg_ratio, enterprise_to_ebitda\n"
+                f"   - Profitability: gross_margin, operating_margin, profit_margin, return_on_equity, return_on_assets\n"
+                f"   - Financial Health: debt_to_equity, current_ratio, quick_ratio, free_cashflow\n"
+                f"   - Growth: revenue_growth, earnings_growth\n"
+                f"\n"
+                f"CRITICAL: Extract and include the financial metrics in your output:\n"
+                f"- pe_ratio: Use trailing_pe from valuation metrics\n"
+                f"- forward_pe: Use forward_pe from valuation metrics\n"
+                f"- pb_ratio: Use price_to_book from valuation metrics\n"
+                f"- ps_ratio: Use price_to_sales from valuation metrics\n"
+                f"- peg_ratio: Use peg_ratio from valuation metrics\n"
+                f"- ev_ebitda: Use enterprise_to_ebitda from valuation metrics\n"
+                f"- profit_margin: Use profit_margin from profitability metrics\n"
+                f"- operating_margin: Use operating_margin from profitability metrics\n"
+                f"- gross_margin: Use gross_margin from profitability metrics\n"
+                f"- roe: Use return_on_equity from profitability metrics\n"
+                f"- roa: Use return_on_assets from profitability metrics\n"
+                f"- debt_to_equity: Use debt_to_equity from financial_health metrics\n"
+                f"- current_ratio: Use current_ratio from financial_health metrics\n"
+                f"- revenue_growth: Use revenue_growth from growth metrics\n"
+                f"- earnings_growth: Use earnings_growth from growth metrics\n"
                 f"\n"
                 f"Analyze this data to evaluate:\n"
-                f"1. Analyst confidence and consensus (what do professionals think?)\n"
-                f"2. Market sentiment and perception (is news coverage positive or negative?)\n"
-                f"3. Recent price momentum (is the stock trending up or down?)\n"
-                f"4. Business quality and competitive position (based on news and analyst views)\n"
-                f"5. Growth prospects and catalysts (from recent developments)\n"
-                f"6. Valuation attractiveness (relative to analyst targets and sentiment)\n"
-                f"7. Financial risks and concerns (from news and analyst warnings)\n"
+                f"1. Valuation attractiveness (P/E, P/B, PEG - lower often better)\n"
+                f"2. Profitability quality (high margins and ROE are positive)\n"
+                f"3. Financial health (low debt, adequate liquidity)\n"
+                f"4. Growth prospects (revenue and earnings growth trends)\n"
+                f"5. Analyst confidence and consensus\n"
+                f"6. Business quality and competitive position\n"
+                f"7. Financial risks and concerns\n"
                 f"\n"
                 f"Do NOT make up or hallucinate financial metrics. Use ONLY the data from the tool.\n"
-                f"If specific metrics (P/E, margins, etc.) are not available, focus on the data you have.\n"
+                f"If specific metrics are not available from the tool, set them to null in your output.\n"
                 f"\n"
                 f"Provide a fundamental score (0-100) based on the real data fetched."
             ),
             agent=agent,
             expected_output=(
-                "Fundamental analysis based on real data: analyst consensus interpretation, "
-                "sentiment analysis, momentum assessment, and fundamental score (0-100)"
+                "Fundamental analysis with financial metrics (P/E, margins, ROE, debt ratios, growth), "
+                "analyst consensus interpretation, valuation assessment, and fundamental score (0-100)"
             ),
+            output_pydantic=FundamentalAnalysisOutput,
         )
 
     @staticmethod
@@ -358,6 +426,7 @@ class CrewAITaskFactory:
                 "Sentiment analysis with article-level sentiment scores, key themes, event classification, "
                 "overall sentiment distribution, and final sentiment score (0-100)"
             ),
+            output_pydantic=SentimentAnalysisOutput,
         )
 
     @staticmethod
@@ -455,4 +524,5 @@ class CrewAITaskFactory:
             expected_output=(
                 "Valid JSON object matching the InvestmentSignal schema with all required fields populated"
             ),
+            output_pydantic=SignalSynthesisOutput,
         )

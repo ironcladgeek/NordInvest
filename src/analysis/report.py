@@ -1,9 +1,14 @@
 """Report generation for daily market analysis and signals."""
 
+from collections import defaultdict
 from datetime import datetime
 from typing import Any
 
-from src.analysis.models import DailyReport, InvestmentSignal
+from src.analysis.models import (
+    DailyReport,
+    InvestmentSignal,
+    TechnicalIndicators,
+)
 from src.utils.llm_check import check_llm_configuration
 from src.utils.logging import get_logger
 
@@ -439,6 +444,16 @@ class ReportGenerator:
             for flag in signal.risk.flags:
                 lines.append(f"- {flag}\n")
 
+        if signal.rationale:
+            lines.append("\n📝 **Detailed Rationale:**\n")
+            lines.append(f"{signal.rationale}\n")
+
+        # Add metadata tables if available
+        metadata_tables = format_metadata_tables(signal)
+        if metadata_tables:
+            lines.append("\n## Analysis Details\n\n")
+            lines.append(metadata_tables)
+
         if signal.allocation:
             lines.append(
                 f"\n💰 **Suggested Allocation:** €{signal.allocation.eur:,.0f} "
@@ -503,3 +518,325 @@ class ReportGenerator:
             return next_date.strftime("%Y-%m-%d 08:00 UTC")
         except Exception:
             return "Next trading day 08:00 UTC"
+
+
+def format_metadata_tables(signal: InvestmentSignal) -> str:
+    """Format signal metadata as markdown tables.
+
+    Args:
+        signal: Investment signal with metadata
+
+    Returns:
+        Markdown-formatted tables string
+    """
+    if not signal.metadata:
+        return ""
+
+    sections = []
+
+    # Technical Indicators Table
+    if signal.metadata.technical_indicators:
+        tech = signal.metadata.technical_indicators
+        sections.append("### Technical Indicators\n")
+        sections.append("| Indicator | Value |")
+        sections.append("|-----------|-------|")
+
+        # GENERIC DISPLAY: Automatically format all indicators from dynamic fields
+        # This works for ANY indicator without code changes!
+        indicator_rows = _format_technical_indicators_generic(tech)
+        sections.extend(indicator_rows)
+
+        # Volume (special case - not a technical indicator)
+        if tech.volume_avg is not None:
+            sections.append(f"| Avg Volume (20d) | {tech.volume_avg:,} |")
+
+        sections.append("")
+
+    # Fundamental Metrics Table
+    if signal.metadata.fundamental_metrics:
+        fund = signal.metadata.fundamental_metrics
+        sections.append("### Fundamental Metrics\n")
+        sections.append("| Metric | Value |")
+        sections.append("|--------|-------|")
+
+        if fund.pe_ratio is not None:
+            sections.append(f"| P/E Ratio | {fund.pe_ratio:.2f} |")
+        if fund.pb_ratio is not None:
+            sections.append(f"| P/B Ratio | {fund.pb_ratio:.2f} |")
+        if fund.ps_ratio is not None:
+            sections.append(f"| P/S Ratio | {fund.ps_ratio:.2f} |")
+        if fund.peg_ratio is not None:
+            sections.append(f"| PEG Ratio | {fund.peg_ratio:.2f} |")
+        if fund.ev_ebitda is not None:
+            sections.append(f"| EV/EBITDA | {fund.ev_ebitda:.2f} |")
+        if fund.profit_margin is not None:
+            sections.append(f"| Profit Margin | {fund.profit_margin:.1f}% |")
+        if fund.operating_margin is not None:
+            sections.append(f"| Operating Margin | {fund.operating_margin:.1f}% |")
+        if fund.roe is not None:
+            sections.append(f"| ROE | {fund.roe:.1f}% |")
+        if fund.roa is not None:
+            sections.append(f"| ROA | {fund.roa:.1f}% |")
+        if fund.debt_to_equity is not None:
+            sections.append(f"| Debt/Equity | {fund.debt_to_equity:.2f} |")
+        if fund.current_ratio is not None:
+            sections.append(f"| Current Ratio | {fund.current_ratio:.2f} |")
+        if fund.revenue_growth is not None:
+            sections.append(f"| Revenue Growth | {fund.revenue_growth:+.1f}% |")
+        if fund.earnings_growth is not None:
+            sections.append(f"| Earnings Growth | {fund.earnings_growth:+.1f}% |")
+
+        sections.append("")
+
+    # Analyst Info Table
+    if signal.metadata.analyst_info:
+        analyst = signal.metadata.analyst_info
+        sections.append("### Analyst Ratings\n")
+        sections.append("| Metric | Value |")
+        sections.append("|--------|-------|")
+
+        if analyst.num_analysts is not None:
+            sections.append(f"| Number of Analysts | {analyst.num_analysts} |")
+        if analyst.consensus_rating:
+            sections.append(f"| Consensus | {analyst.consensus_rating.replace('_', ' ').title()} |")
+
+        # Rating distribution
+        if any([analyst.strong_buy, analyst.buy, analyst.hold, analyst.sell, analyst.strong_sell]):
+            ratings = []
+            if analyst.strong_buy:
+                ratings.append(f"Strong Buy: {analyst.strong_buy}")
+            if analyst.buy:
+                ratings.append(f"Buy: {analyst.buy}")
+            if analyst.hold:
+                ratings.append(f"Hold: {analyst.hold}")
+            if analyst.sell:
+                ratings.append(f"Sell: {analyst.sell}")
+            if analyst.strong_sell:
+                ratings.append(f"Strong Sell: {analyst.strong_sell}")
+            sections.append(f"| Distribution | {' / '.join(ratings)} |")
+
+        if analyst.price_target is not None:
+            sections.append(f"| Avg Price Target | ${analyst.price_target:.2f} |")
+        if analyst.price_target_low is not None and analyst.price_target_high is not None:
+            sections.append(
+                f"| Price Target Range | ${analyst.price_target_low:.2f} - ${analyst.price_target_high:.2f} |"
+            )
+
+        sections.append("")
+
+    # Sentiment Info Table
+    if signal.metadata.sentiment_info:
+        sent = signal.metadata.sentiment_info
+        sections.append("### News & Sentiment\n")
+        sections.append("| Metric | Value |")
+        sections.append("|--------|-------|")
+
+        if sent.news_count is not None:
+            sections.append(f"| News Articles | {sent.news_count} |")
+        if sent.sentiment_score is not None:
+            sentiment_label = (
+                "Positive"
+                if sent.sentiment_score > 0.1
+                else "Negative"
+                if sent.sentiment_score < -0.1
+                else "Neutral"
+            )
+            sections.append(f"| Sentiment | {sentiment_label} ({sent.sentiment_score:+.2f}) |")
+
+        if any([sent.positive_news, sent.negative_news, sent.neutral_news]):
+            breakdown = []
+            if sent.positive_news:
+                breakdown.append(f"Positive: {sent.positive_news}")
+            if sent.neutral_news:
+                breakdown.append(f"Neutral: {sent.neutral_news}")
+            if sent.negative_news:
+                breakdown.append(f"Negative: {sent.negative_news}")
+            sections.append(f"| News Breakdown | {' / '.join(breakdown)} |")
+
+        sections.append("")
+
+    return "\n".join(sections)
+
+
+def _format_technical_indicators_generic(tech: "TechnicalIndicators") -> list[str]:
+    """Format technical indicators using GENERIC approach.
+
+    This function automatically displays ANY indicator without code changes!
+    It works by:
+    1. Grouping fields by base indicator name (e.g., macd_12_26_9_*)
+    2. Detecting multi-component indicators (line/signal, upper/lower, etc.)
+    3. Formatting based on indicator type patterns
+
+    Adding Ichimoku Cloud or any new indicator requires ZERO code changes -
+    just add to config and this will display it!
+
+    Args:
+        tech: TechnicalIndicators model with dynamic fields
+
+    Returns:
+        List of markdown table rows
+    """
+
+    rows = []
+
+    # Get all field names except volume_avg (handled separately)
+    # Pydantic models with extra="allow" store extra fields in model_extra
+    all_fields = {}
+
+    # Get defined fields
+    for field_name in tech.model_fields.keys():
+        if field_name == "volume_avg":
+            continue
+        value = getattr(tech, field_name, None)
+        if value is not None and isinstance(value, (int, float)):
+            all_fields[field_name] = value
+
+    # Get extra fields (dynamically added indicators)
+    if hasattr(tech, "__pydantic_extra__") and tech.__pydantic_extra__:
+        for field_name, value in tech.__pydantic_extra__.items():
+            if value is not None and isinstance(value, (int, float)):
+                all_fields[field_name] = value
+
+    # Group fields by base indicator (e.g., macd_12_26_9_line/signal → macd_12_26_9)
+    indicator_groups = defaultdict(dict)
+    for field_name, value in all_fields.items():
+        # Try to split into base_indicator_component
+        # Pattern: indicator_params_component (e.g., macd_12_26_9_line, bbands_20_2_upper)
+        parts = field_name.rsplit("_", 1)
+        if len(parts) == 2:
+            base, component = parts
+            indicator_groups[base][component] = value
+        else:
+            # Simple indicator (e.g., rsi_14)
+            indicator_groups[field_name]["value"] = value
+
+    # Define display order and formatting rules
+    INDICATOR_ORDER = [
+        "rsi",
+        "macd",
+        "bbands",
+        "sma",
+        "ema",
+        "adx",
+        "stoch",
+        "atr",
+        "ichimoku",
+        "obv",
+        "cmf",
+        "vwap",  # Future-proof for common indicators
+    ]
+
+    # Sort indicators by predefined order (if defined), then alphabetically
+    def sort_key(item):
+        base_name = item[0]
+        # Extract indicator type (rsi, macd, etc.) from base_name
+        indicator_type = base_name.split("_")[0]
+        if indicator_type in INDICATOR_ORDER:
+            return (INDICATOR_ORDER.index(indicator_type), base_name)
+        return (len(INDICATOR_ORDER), base_name)
+
+    sorted_groups = sorted(indicator_groups.items(), key=sort_key)
+
+    # Format each indicator group
+    for base_name, components in sorted_groups:
+        indicator_type = base_name.split("_")[0]
+        params = "_".join(base_name.split("_")[1:])  # Extract parameters (14, 12_26_9, etc.)
+
+        # Detect indicator pattern and format accordingly
+        if "value" in components and len(components) == 1:
+            # Simple single-value indicator (RSI, SMA, EMA, ATR)
+            value = components["value"]
+            display_name = _format_indicator_name(indicator_type, params)
+
+            # Price-based indicators get $ formatting
+            if indicator_type in ["sma", "ema", "atr", "vwap"]:
+                rows.append(f"| {display_name} | ${value:.2f} |")
+            else:
+                rows.append(f"| {display_name} | {value:.2f} |")
+
+        elif "line" in components and "signal" in components:
+            # MACD-like indicators with line/signal/histogram
+            display_name = _format_indicator_name(indicator_type, params)
+            display_values = [f"{components['line']:.2f}", f"{components['signal']:.2f}"]
+            if "histogram" in components:
+                display_values.append(f"{components['histogram']:.2f}")
+            rows.append(f"| {display_name} | {' / '.join(display_values)} |")
+
+        elif "upper" in components and "lower" in components:
+            # Band indicators (Bollinger Bands, Ichimoku Senkou)
+            display_name = _format_indicator_name(indicator_type, params)
+            display_values = []
+            if "lower" in components:
+                display_values.append(f"${components['lower']:.2f}")
+            if "middle" in components:
+                display_values.append(f"${components['middle']:.2f}")
+            if "upper" in components:
+                display_values.append(f"${components['upper']:.2f}")
+            rows.append(f"| {display_name} | {' / '.join(display_values)} |")
+
+        elif indicator_type == "adx" and ("dmp" in components or "dmn" in components):
+            # ADX with directional movement
+            display_name = _format_indicator_name("adx", params)
+            # The main ADX value is stored without suffix (handled by flattening)
+            adx_val = components.get(base_name.split("_")[-1], components.get("value", 0))
+            display = f"{adx_val:.2f}"
+            if "dmp" in components and "dmn" in components:
+                display += f" (+DI: {components['dmp']:.2f}, -DI: {components['dmn']:.2f})"
+            rows.append(f"| {display_name} | {display} |")
+
+        elif indicator_type == "stoch" and "k" in components:
+            # Stochastic with %K and %D
+            display_name = _format_indicator_name("stoch", params)
+            display = f"%K: {components['k']:.2f}"
+            if "d" in components:
+                display += f", %D: {components['d']:.2f}"
+            rows.append(f"| {display_name} | {display} |")
+
+        else:
+            # Generic multi-component display (works for Ichimoku, future indicators)
+            display_name = _format_indicator_name(indicator_type, params)
+            component_strs = [f"{k}: {v:.2f}" for k, v in sorted(components.items())]
+            rows.append(f"| {display_name} | {', '.join(component_strs)} |")
+
+    return rows
+
+
+def _format_indicator_name(indicator_type: str, params: str) -> str:
+    """Format indicator display name with parameters in parentheses.
+
+    Examples:
+    - ("rsi", "14") → "RSI (14)"
+    - ("macd", "12_26_9") → "MACD (12, 26, 9)"
+    - ("bbands", "20_2") → "Bollinger Bands (20, 2.0)"
+    - ("ichimoku", "9_26_52") → "Ichimoku Cloud (9, 26, 52)"
+    """
+    # Indicator display names
+    DISPLAY_NAMES = {
+        "rsi": "RSI",
+        "macd": "MACD",
+        "bbands": "Bollinger Bands",
+        "sma": "SMA",
+        "ema": "EMA",
+        "adx": "ADX",
+        "stoch": "Stochastic",
+        "atr": "ATR",
+        "ichimoku": "Ichimoku Cloud",
+        "obv": "OBV",
+        "cmf": "CMF",
+        "vwap": "VWAP",
+    }
+
+    display_name = DISPLAY_NAMES.get(indicator_type, indicator_type.upper())
+
+    if params:
+        # Convert 12_26_9 → "12, 26, 9"
+        # Convert 20_2 → "20, 2.0" (special case for Bollinger Bands std dev)
+        param_parts = params.split("_")
+        if indicator_type == "bbands" and len(param_parts) == 2:
+            # Format std dev as decimal
+            formatted_params = f"{param_parts[0]}, {float(param_parts[1]):.1f}"
+        else:
+            formatted_params = ", ".join(param_parts)
+        return f"{display_name} ({formatted_params})"
+
+    return display_name

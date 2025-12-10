@@ -278,7 +278,6 @@ class TestAllocationEngine:
         assert suggestion.eur > 0
         assert suggestion.percentage > 0
         assert suggestion.percentage <= allocation_engine.max_position_size_pct
-        expected_return = (5.0 + 15.0) / 2  # Average of min and max
         assert suggestion.eur > 0  # Just check it's allocated
 
     def test_zero_capital_handling(self):

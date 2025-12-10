@@ -27,9 +27,6 @@ def mock_provider():
     provider = MagicMock()
     provider.name = "mock_provider"
 
-    # Test date: June 1, 2024
-    test_date = datetime(2024, 6, 1)
-
     # Price data: mix of before and after the test date
     provider.get_stock_prices.return_value = [
         StockPrice(

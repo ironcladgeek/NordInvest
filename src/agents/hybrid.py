@@ -1,5 +1,6 @@
 """Hybrid intelligence system combining LLM and rule-based analysis."""
 
+import gc
 from typing import Any, Optional
 
 from crewai import Agent, Crew, Task
@@ -53,6 +54,7 @@ class HybridAnalysisAgent:
         context = context or {}
 
         # Try LLM-based analysis
+        crew = None
         try:
             logger.debug(f"Executing LLM task: {task.description[:50]}...")
 
@@ -143,6 +145,17 @@ class HybridAnalysisAgent:
                     "used_llm": False,
                     "used_fallback": False,
                 }
+
+        finally:
+            # Explicitly clean up crew resources to prevent file descriptor leaks
+            if crew is not None:
+                try:
+                    # Delete the crew instance to free resources
+                    del crew
+                    # Force garbage collection to ensure file descriptors are released
+                    gc.collect()
+                except Exception as cleanup_error:
+                    logger.debug(f"Error during crew cleanup: {cleanup_error}")
 
     def get_status(self) -> dict[str, Any]:
         """Get agent status information.

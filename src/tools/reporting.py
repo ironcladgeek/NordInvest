@@ -85,7 +85,7 @@ class ReportGeneratorTool(BaseTool):
             lines.append(f"Direction: {sent.get('sentiment_direction', 'N/A')}")
 
         if "recommendation" in data:
-            lines.append(f"\n--- Recommendation ---")
+            lines.append("\n--- Recommendation ---")
             lines.append(f"Action: {data['recommendation'].get('action', 'N/A')}")
             lines.append(f"Confidence: {data['recommendation'].get('confidence', 'N/A')}%")
 

@@ -1,20 +1,21 @@
 """NordInvest CLI interface."""
 
 import json
-import re
 import sys
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import typer
 
 from src.analysis import InvestmentSignal
-from src.analysis.models import ComponentScores, RiskAssessment
+from src.analysis.signal_creator import SignalCreator
 from src.cache.manager import CacheManager
 from src.config import load_config
 from src.data.db import init_db
 from src.data.portfolio import PortfolioState
+from src.data.price_manager import PriceDataManager
+from src.data.provider_manager import ProviderManager
 from src.llm.integration import LLMAnalysisOrchestrator
 from src.llm.token_tracker import TokenTracker
 from src.MARKET_TICKERS import (
@@ -25,6 +26,7 @@ from src.MARKET_TICKERS import (
 from src.pipeline import AnalysisPipeline
 from src.utils.llm_check import get_fallback_warning_message, log_llm_status
 from src.utils.logging import get_logger, setup_logging
+from src.utils.resilience import RateLimiter
 from src.utils.scheduler import RunLog
 
 app = typer.Typer(
@@ -67,6 +69,13 @@ def _scan_market_for_anomalies(
         context = {"tickers": tickers}
         if historical_date:
             context["analysis_date"] = historical_date
+
+        # Add lookback days from pipeline config
+        if hasattr(pipeline, "config") and hasattr(pipeline.config, "analysis"):
+            if hasattr(pipeline.config.analysis, "historical_data_lookback_days"):
+                context["historical_data_lookback_days"] = (
+                    pipeline.config.analysis.historical_data_lookback_days
+                )
 
         # Run market scan
         scan_result = pipeline.crew.market_scanner.execute("Scan market for anomalies", context)
@@ -124,6 +133,7 @@ def _run_llm_analysis(
     debug_llm: bool = False,
     is_filtered: bool = False,
     cache_manager=None,
+    provider_manager=None,
     historical_date=None,
     run_session_id: int | None = None,
     recommendations_repo=None,
@@ -172,6 +182,7 @@ def _run_llm_analysis(
             debug_dir=debug_dir,
             progress_callback=progress_callback,
             db_path=config_obj.database.db_path if config_obj.database.enabled else None,
+            config=config_obj,
         )
 
         # Set historical date on all tools if provided
@@ -201,13 +212,6 @@ def _run_llm_analysis(
         ) as progress:
             for ticker in progress:
                 try:
-                    # Create a sub-progress callback for agent tasks
-                    task_names = [
-                        "market_scan",
-                        "technical_analysis",
-                        "fundamental_analysis",
-                        "sentiment_analysis",
-                    ]
                     current_task = [0]  # Use list to allow mutation in nested function
 
                     def agent_progress_callback(current, total, task_name):
@@ -219,48 +223,46 @@ def _run_llm_analysis(
                             typer_instance.echo(f"  → {agent_name} ({current}/{total})", nl=False)
                             typer_instance.echo("\r", nl=False)  # Carriage return to overwrite
 
-                    result = orchestrator.analyze_instrument(
+                    # Analyze instrument - returns UnifiedAnalysisResult or None
+                    unified_result = orchestrator.analyze_instrument(
                         ticker, progress_callback=agent_progress_callback
                     )
 
-                    # Extract signal from result if successful
-                    if result.get("status") == "complete":
-                        # Use the synthesis result if available
-                        synthesis_result = result.get("results", {}).get("synthesis", {})
-                        if synthesis_result.get("status") == "success":
-                            signal_data = synthesis_result.get("result", {})
+                    # Create signal from unified result using SignalCreator
+                    if unified_result:
+                        # Initialize SignalCreator with required dependencies
+                        signal_creator = SignalCreator(
+                            cache_manager=cache_manager,
+                            provider_manager=provider_manager,
+                            risk_assessor=None,  # Risk assessment already in unified_result
+                        )
 
-                            # Handle CrewOutput object - extract the raw output
-                            if hasattr(signal_data, "raw"):
-                                signal_text = signal_data.raw
-                            elif hasattr(signal_data, "result"):
-                                signal_text = signal_data.result
-                            else:
-                                signal_text = str(signal_data)
+                        # Create signal from unified analysis result
+                        signal = signal_creator.create_signal(
+                            result=unified_result,
+                            portfolio_context={},
+                            analysis_date=historical_date,
+                        )
 
-                            # Create InvestmentSignal from LLM result
-                            signal = _create_signal_from_llm_result(
-                                ticker, signal_text, cache_manager, historical_date
-                            )
-                            if signal:
-                                signals.append(signal)
+                        if signal:
+                            signals.append(signal)
 
-                                # Store signal to database if enabled
-                                if recommendations_repo and run_session_id:
-                                    try:
-                                        recommendations_repo.store_recommendation(
-                                            signal=signal,
-                                            run_session_id=run_session_id,
-                                            analysis_mode="llm",
-                                            llm_model=config_obj.llm.model,
-                                        )
-                                    except Exception as e:
-                                        logger.warning(
-                                            f"Failed to store recommendation for {ticker} to database: {e}"
-                                        )
-                                        # Continue execution - DB failures don't halt pipeline
-                        else:
-                            logger.warning(f"Synthesis failed for {ticker}, skipping")
+                            # Store signal to database if enabled
+                            if recommendations_repo and run_session_id:
+                                try:
+                                    recommendations_repo.store_recommendation(
+                                        signal=signal,
+                                        run_session_id=run_session_id,
+                                        analysis_mode="llm",
+                                        llm_model=config_obj.llm.model,
+                                    )
+                                except Exception as e:
+                                    logger.warning(
+                                        f"Failed to store recommendation for {ticker} to database: {e}"
+                                    )
+                                    # Continue execution - DB failures don't halt pipeline
+                    else:
+                        logger.warning(f"Analysis failed for {ticker}, skipping")
 
                 except Exception as e:
                     logger.error(f"Error analyzing {ticker} with LLM: {e}")
@@ -281,178 +283,6 @@ def _run_llm_analysis(
         logger.error(f"Error in LLM analysis: {e}", exc_info=True)
         typer_instance.echo(f"❌ LLM Analysis Error: {e}", err=True)
         return [], None
-
-
-def _create_signal_from_llm_result(
-    ticker: str,
-    llm_result: dict | str,
-    cache_manager=None,
-    historical_date: date | None = None,
-) -> InvestmentSignal | None:
-    """Convert LLM analysis result to InvestmentSignal.
-
-    Args:
-        ticker: Stock ticker
-        llm_result: LLM analysis result (dict or JSON string)
-        cache_manager: Optional cache manager for fetching current price
-        historical_date: Optional historical date for backtesting
-
-    Returns:
-        InvestmentSignal or None if conversion fails
-    """
-    try:
-        # Parse LLM result if it's a string
-        if isinstance(llm_result, str):
-            # Clean up common formatting issues
-            llm_result = llm_result.strip()
-
-            # Try to extract JSON from markdown code blocks
-            json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", llm_result, re.DOTALL)
-            if json_match:
-                llm_result = json.loads(json_match.group(1))
-            else:
-                # Try to find the first complete JSON object in the text
-                # Strategy: Start from first { and try to parse incrementally until we get valid JSON
-                first_brace = llm_result.find("{")
-
-                if first_brace != -1:
-                    # Try to find a complete JSON object by parsing with increasing end positions
-                    brace_count = 0
-                    in_string = False
-                    escape_next = False
-                    json_end = -1
-
-                    for i in range(first_brace, len(llm_result)):
-                        char = llm_result[i]
-
-                        if escape_next:
-                            escape_next = False
-                            continue
-
-                        if char == "\\":
-                            escape_next = True
-                            continue
-
-                        if char == '"' and not escape_next:
-                            in_string = not in_string
-                            continue
-
-                        if not in_string:
-                            if char == "{":
-                                brace_count += 1
-                            elif char == "}":
-                                brace_count -= 1
-                                if brace_count == 0:
-                                    json_end = i + 1
-                                    break
-
-                    if json_end != -1:
-                        json_str = llm_result[first_brace:json_end]
-                        try:
-                            llm_result = json.loads(json_str)
-                            logger.debug("Successfully extracted JSON from LLM response")
-                        except json.JSONDecodeError as e:
-                            logger.warning(f"Could not parse extracted JSON: {e}")
-                            logger.debug(f"Attempted to parse: {json_str[:500]}")
-                            return None
-                    else:
-                        logger.warning("Could not find complete JSON object (unbalanced braces)")
-                        logger.debug(f"Response preview: {llm_result[:200]}")
-                        return None
-                else:
-                    logger.warning("No JSON object found in LLM result")
-                    logger.debug(f"Response preview: {llm_result[:200]}")
-                    return None
-
-        # Map recommendation to enum values
-        recommendation = llm_result.get("recommendation", "hold").lower()
-        recommendation_map = {
-            "strong_buy": "strong_buy",
-            "buy": "buy",
-            "hold_bullish": "hold_bullish",
-            "hold": "hold",
-            "hold_bearish": "hold_bearish",
-            "sell": "sell",
-            "strong_sell": "strong_sell",
-        }
-        recommendation = recommendation_map.get(recommendation, "hold")
-
-        # Parse risk assessment with proper defaults
-        risk_data = llm_result.get("risk", {})
-        risk_level = (risk_data.get("level") or "medium").lower()
-        # Map 'moderate' to 'medium' for compatibility
-        if risk_level == "moderate":
-            risk_level = "medium"
-
-        risk_assessment = RiskAssessment(
-            level=risk_level,
-            volatility=risk_data.get("volatility") or "normal",
-            volatility_pct=risk_data.get("volatility_pct") or 2.0,
-            liquidity=risk_data.get("liquidity") or "normal",
-            concentration_risk=risk_data.get("concentration_risk") or False,
-            sector_risk=risk_data.get("sector_risk"),
-            flags=risk_data.get("flags") or risk_data.get("factors") or [],
-        )
-
-        # Create signal with proper schema
-        # Fetch actual current price and currency from cache
-        # Handle None values from LLM result (e.g., "current_price": null in JSON)
-        current_price = llm_result.get("current_price") or 0.0
-        currency = llm_result.get("currency", "USD")
-        if cache_manager:
-            try:
-                latest_price = cache_manager.get_latest_price(ticker)
-                if latest_price and latest_price.close_price:
-                    current_price = latest_price.close_price
-                    currency = latest_price.currency
-            except Exception as e:
-                logger.debug(
-                    f"Could not fetch price for {ticker} from cache: {e}. Using LLM defaults."
-                )
-
-        # Ensure current_price is never None
-        if current_price is None:
-            current_price = 0.0
-
-        signal = InvestmentSignal(
-            ticker=ticker,
-            name=llm_result.get("name", ticker),
-            market=llm_result.get("market", "Global"),
-            sector=llm_result.get("sector"),
-            current_price=current_price,
-            currency=currency,
-            scores=ComponentScores(
-                **llm_result.get(
-                    "scores",
-                    {
-                        "technical": 50,
-                        "fundamental": 50,
-                        "sentiment": 50,
-                    },
-                )
-            ),
-            final_score=llm_result.get("final_score", 50.0),
-            recommendation=recommendation,
-            confidence=llm_result.get("confidence", 50.0),
-            time_horizon=llm_result.get("time_horizon", "3M"),
-            expected_return_min=llm_result.get("expected_return_min", 0.0),
-            expected_return_max=llm_result.get("expected_return_max", 10.0),
-            key_reasons=llm_result.get("key_reasons", []),
-            risk=risk_assessment,
-            allocation=None,  # Will be calculated later
-            generated_at=datetime.now(),
-            analysis_date=historical_date.strftime("%Y-%m-%d")
-            if historical_date
-            else datetime.now().strftime("%Y-%m-%d"),
-            rationale=llm_result.get("rationale"),
-            caveats=llm_result.get("caveats", []),
-        )
-
-        return signal
-
-    except Exception as e:
-        logger.error(f"Error creating signal from LLM result: {e}")
-        return None
 
 
 @app.command()
@@ -707,16 +537,8 @@ def analyze(
             config_obj.test_mode.use_mock_llm = use_llm
             logger.debug(f"Test mode enabled with fixture: {fixture}")
 
-        pipeline_config = {
-            "capital_starting": config_obj.capital.starting_capital_eur,
-            "capital_monthly_deposit": config_obj.capital.monthly_deposit_eur,
-            "max_position_size_pct": 10.0,
-            "max_sector_concentration_pct": 20.0,
-            "include_disclaimers": True,
-        }
-
         pipeline = AnalysisPipeline(
-            pipeline_config,
+            config_obj,
             cache_manager,
             portfolio_manager,
             llm_provider=config_obj.llm.provider,
@@ -915,6 +737,7 @@ def analyze(
                 debug_llm,
                 is_filtered=True,
                 cache_manager=cache_manager,
+                provider_manager=provider_manager,
                 historical_date=historical_date,
                 run_session_id=run_session_id,
                 recommendations_repo=recommendations_repo,
@@ -1157,16 +980,8 @@ def report(
             db_path=config_obj.database.db_path if config_obj.database.enabled else None,
         )
 
-        pipeline_config = {
-            "capital_starting": config_obj.capital.starting_capital_eur,
-            "capital_monthly_deposit": config_obj.capital.monthly_deposit_eur,
-            "max_position_size_pct": 10.0,
-            "max_sector_concentration_pct": 20.0,
-            "include_disclaimers": True,
-        }
-
         pipeline = AnalysisPipeline(
-            pipeline_config,
+            config_obj,
             cache_manager,
             portfolio_manager,
             llm_provider=config_obj.llm.provider,
@@ -1389,6 +1204,220 @@ def list_portfolios() -> None:
     typer.echo("  analyze --group us_portfolio_tech_growth --llm")
     typer.echo("  analyze --group us_portfolio_all_weather")
     typer.echo()
+
+
+@app.command()
+def download_prices(
+    market: str = typer.Option(
+        None,
+        "--market",
+        "-m",
+        help="Market to download: 'global', 'us', 'eu', 'nordic', or comma-separated (e.g., 'us,eu')",
+    ),
+    group: str = typer.Option(
+        None,
+        "--group",
+        "-g",
+        help="Ticker group: sector categories or portfolios. Comma-separated for multiple.",
+    ),
+    ticker: str = typer.Option(
+        None,
+        "--ticker",
+        "-t",
+        help="Comma-separated list of tickers to download (e.g., 'AAPL,MSFT,GOOGL')",
+    ),
+    limit: int = typer.Option(
+        None,
+        "--limit",
+        "-l",
+        help="Maximum number of instruments to download per market",
+    ),
+    config: Path = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Path to configuration file (default: config/local.yaml or config/default.yaml)",
+        exists=True,
+    ),
+    force_refresh: bool = typer.Option(
+        False,
+        "--force-refresh",
+        help="Force re-download of all data (ignores existing cache)",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Show what would be downloaded without actually downloading",
+    ),
+) -> None:
+    """Download historical price data for tickers and store as CSV files.
+
+    Fetches historical price data from configured providers and stores it
+    in the cache directory as CSV files (one per ticker). Uses the lookback
+    period defined in config (historical_data_lookback_days).
+
+    Examples:
+        # Download prices for specific tickers
+        download-prices --ticker AAPL,MSFT,GOOGL
+
+        # Download prices for a market
+        download-prices --market us --limit 50
+
+        # Download prices for a group
+        download-prices --group us_tech_software
+
+        # Download all markets with force refresh
+        download-prices --market global --force-refresh
+
+        # Dry run to see what would be downloaded
+        download-prices --market nordic --dry-run
+    """
+    # Validate inputs
+    if not market and not group and not ticker:
+        typer.echo(
+            "❌ Error: Either --market, --group, or --ticker must be provided\n"
+            "Examples:\n"
+            "  download-prices --market us\n"
+            "  download-prices --group us_tech_software\n"
+            "  download-prices --ticker AAPL,MSFT,GOOGL",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    if (market or group) and ticker:
+        typer.echo("❌ Error: Cannot specify --ticker with --market or --group", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        # Load configuration
+        config_obj = load_config(config)
+
+        # Setup logging
+        setup_logging(config_obj.logging)
+
+        typer.echo("📥 Historical Price Data Downloader")
+        typer.echo(f"  Provider: {config_obj.data.primary_provider}")
+        typer.echo(f"  Lookback period: {config_obj.analysis.historical_data_lookback_days} days")
+
+        # Determine tickers to download
+        if ticker:
+            tickers = [t.strip().upper() for t in ticker.split(",")]
+            typer.echo(f"  Mode: Specific tickers ({len(tickers)} specified)")
+        elif group:
+            groups = [g.strip() for g in group.split(",")]
+            typer.echo(f"  Mode: Group analysis ({', '.join(groups)})")
+            tickers = get_tickers_for_analysis(
+                markets=None, categories=groups, limit_per_category=limit
+            )
+        else:
+            markets_list = [m.strip().lower() for m in market.split(",")]
+            typer.echo(f"  Mode: Market analysis ({', '.join(markets_list)})")
+            tickers = get_tickers_for_markets(markets_list, limit=limit)
+
+        typer.echo(f"  Tickers to process: {len(tickers)}")
+
+        if dry_run:
+            typer.echo("\n🔍 DRY RUN MODE - No data will be downloaded")
+            typer.echo(f"\nTickers that would be processed ({len(tickers)}):")
+            for i, t in enumerate(tickers[:20], 1):
+                typer.echo(f"  {i}. {t}")
+            if len(tickers) > 20:
+                typer.echo(f"  ... and {len(tickers) - 20} more")
+            return
+
+        # Initialize components
+        data_dir = Path("data")
+        price_manager = PriceDataManager(prices_dir=data_dir / "cache" / "prices")
+        provider_manager = ProviderManager(
+            primary_provider=config_obj.data.primary_provider,
+            backup_providers=config_obj.data.backup_providers,
+            db_path=config_obj.database.db_path if config_obj.database.enabled else None,
+        )
+
+        # Initialize rate limiter (conservative: 5 requests per second)
+        rate_limiter = RateLimiter(rate=5, period=1.0)
+
+        # Calculate date range
+        end_date = datetime.now().date()
+        start_date = end_date - timedelta(days=config_obj.analysis.historical_data_lookback_days)
+
+        typer.echo(f"  Date range: {start_date} to {end_date}")
+        if force_refresh:
+            typer.echo("  Force refresh: enabled (will re-download all data)")
+        typer.echo()
+
+        # Download prices
+        success_count = 0
+        skipped_count = 0
+        error_count = 0
+
+        with typer.progressbar(
+            tickers, label="Downloading prices", show_pos=True, show_percent=True
+        ) as progress:
+            for ticker in progress:
+                try:
+                    # Check if we need to download
+                    if not force_refresh and price_manager.has_data(ticker):
+                        existing_start, existing_end = price_manager.get_data_range(ticker)
+                        if existing_end and existing_end >= end_date - timedelta(days=1):
+                            logger.debug(f"Skipping {ticker} - data is current")
+                            skipped_count += 1
+                            continue
+
+                    # Wait for rate limiter
+                    rate_limiter.wait_if_needed(tokens=1)
+
+                    # Fetch prices using provider manager
+                    start_dt = datetime.combine(start_date, datetime.min.time())
+                    end_dt = datetime.combine(end_date, datetime.min.time())
+
+                    prices = provider_manager.get_stock_prices(ticker, start_dt, end_dt)
+
+                    if prices:
+                        # Store to CSV
+                        stored = price_manager.store_prices(
+                            ticker,
+                            [p.model_dump() for p in prices],
+                            append=not force_refresh,
+                        )
+                        if stored > 0:
+                            success_count += 1
+                            logger.debug(f"Downloaded {len(prices)} prices for {ticker}")
+                    else:
+                        logger.warning(f"No price data received for {ticker}")
+                        error_count += 1
+
+                except KeyboardInterrupt:
+                    typer.echo("\n\n⚠️  Download interrupted by user")
+                    break
+                except Exception as e:
+                    logger.error(f"Error downloading {ticker}: {e}")
+                    error_count += 1
+                    # Small delay on error to avoid hammering the API
+                    time.sleep(0.5)
+
+        # Summary
+        typer.echo("\n✅ Download Summary:")
+        typer.echo(f"  Successfully downloaded: {success_count}")
+        typer.echo(f"  Skipped (already current): {skipped_count}")
+        typer.echo(f"  Errors: {error_count}")
+        typer.echo(f"  Total processed: {success_count + skipped_count + error_count}")
+
+        # Show storage location
+        typer.echo(f"\n💾 Data stored in: {price_manager.prices_dir}")
+
+    except FileNotFoundError as e:
+        logger.error(f"Configuration error: {e}")
+        typer.echo(f"❌ Error: {e}", err=True)
+        raise typer.Exit(code=1)
+    except ValueError as e:
+        logger.error(f"Configuration validation error: {e}")
+        typer.echo(f"❌ Configuration error: {e}", err=True)
+        raise typer.Exit(code=1)
+    except Exception as e:
+        logger.exception(f"Unexpected error during download: {e}")
+        typer.echo(f"❌ Error: {e}", err=True)
+        raise typer.Exit(code=1)
 
 
 @app.command()

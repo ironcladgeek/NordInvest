@@ -17,7 +17,7 @@ repos:
         args: [--fix, --select, I]
       - id: ruff
         name: ruff-unused-imports
-        args: [--fix, --select, F401]
+        args: [--fix, --select, F]
       - id: ruff-format
 
   - repo: https://github.com/compilerla/conventional-pre-commit
