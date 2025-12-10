@@ -62,7 +62,7 @@ def _initialize_anthropic(config: LLMConfig):
             max_tokens=config.max_tokens,
             timeout=config.timeout_seconds,
         )
-        logger.info(f"Initialized Anthropic client with model: {config.model}")
+        logger.debug(f"Initialized Anthropic client with model: {config.model}")
         return client
     except ImportError:
         raise ValueError(
@@ -100,7 +100,7 @@ def _initialize_openai(config: LLMConfig):
             max_tokens=config.max_tokens,
             timeout=config.timeout_seconds,
         )
-        logger.info(f"Initialized OpenAI client with model: {config.model}")
+        logger.debug(f"Initialized OpenAI client with model: {config.model}")
         return client
     except ImportError:
         raise ValueError(

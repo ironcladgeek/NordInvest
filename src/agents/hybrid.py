@@ -209,7 +209,7 @@ class HybridAnalysisCrew:
         context = context or {}
         results = {}
 
-        logger.info(f"Starting hybrid crew analysis with {len(tasks)} tasks")
+        logger.debug(f"Starting hybrid crew analysis with {len(tasks)} tasks")
 
         total_tasks = len(tasks)
         for idx, (task_name, task) in enumerate(tasks.items(), 1):
@@ -252,7 +252,7 @@ class HybridAnalysisCrew:
                 }
             )
 
-        logger.info(f"Hybrid crew analysis complete. Results: {len(results)} tasks executed")
+        logger.debug(f"Hybrid crew analysis complete. Results: {len(results)} tasks executed")
 
         # Summary statistics
         successful = sum(1 for r in results.values() if r.get("status") == "success")

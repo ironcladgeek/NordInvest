@@ -57,7 +57,7 @@ class LLMAnalysisOrchestrator:
         # Create debug directory if needed
         if self.debug_dir:
             self.debug_dir.mkdir(parents=True, exist_ok=True)
-            logger.info(f"LLM debug mode enabled: outputs will be saved to {self.debug_dir}")
+            logger.debug(f"LLM debug mode enabled: outputs will be saved to {self.debug_dir}")
 
         # Initialize CrewAI components
         self.agent_factory = CrewAIAgentFactory(self.llm_config)
@@ -68,7 +68,7 @@ class LLMAnalysisOrchestrator:
         self.hybrid_agents = self._create_hybrid_agents()
         self.crew = HybridAnalysisCrew(self.hybrid_agents, self.token_tracker)
 
-        logger.info("Initialized LLM Analysis Orchestrator")
+        logger.debug("Initialized LLM Analysis Orchestrator")
 
     def _create_hybrid_agents(self) -> dict[str, HybridAnalysisAgent]:
         """Create hybrid agents combining CrewAI with fallback.
@@ -179,7 +179,7 @@ class LLMAnalysisOrchestrator:
                     f"Set historical_data_lookback_days in context: {context['historical_data_lookback_days']}"
                 )
 
-        logger.info(f"Starting comprehensive analysis for {ticker}")
+        logger.debug(f"Starting comprehensive analysis for {ticker}")
 
         # Save debug: input context
         if self.debug_dir:
@@ -253,7 +253,7 @@ class LLMAnalysisOrchestrator:
                     sentiment_result=sentiment_results.get("result", {}),
                     synthesis_result=synthesis_result,
                 )
-                logger.info(f"Analysis complete for {ticker}, normalized to unified structure")
+                logger.debug(f"Analysis complete for {ticker}, normalized to unified structure")
                 return unified_result
             except Exception as e:
                 logger.error(f"Failed to normalize LLM results for {ticker}: {e}", exc_info=True)
@@ -285,7 +285,7 @@ class LLMAnalysisOrchestrator:
         Returns:
             Investment signal with recommendation
         """
-        logger.info(f"Synthesizing investment signal for {ticker}")
+        logger.debug(f"Synthesizing investment signal for {ticker}")
 
         # Notify progress
         if self.progress_callback:
@@ -356,7 +356,7 @@ class LLMAnalysisOrchestrator:
         if self.progress_callback:
             self.progress_callback("  ✓ Signal synthesis complete")
 
-        logger.info(f"Signal synthesis complete for {ticker}")
+        logger.debug(f"Signal synthesis complete for {ticker}")
 
         return result
 

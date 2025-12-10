@@ -155,7 +155,7 @@ class TechnicalIndicatorTool(BaseTool):
                     elif field_name == "ichimoku_chikou":
                         output["ichimoku_chikou"] = field_value
 
-            logger.info(
+            logger.debug(
                 f"TechnicalIndicatorTool: mapped {indicator_count} indicator values to {len([k for k in output.keys() if k not in ['symbol', 'periods', 'latest_price']])} Pydantic model fields"
             )
 

@@ -40,7 +40,7 @@ class CrewAIAgentFactory:
         """
         self.llm_config = llm_config or LLMConfig()
         self.llm_client = initialize_llm_client(self.llm_config)
-        logger.info(f"Initialized CrewAI factory with {self.llm_config.provider} provider")
+        logger.debug(f"Initialized CrewAI factory with {self.llm_config.provider} provider")
 
     def create_technical_analysis_agent(self, tools: list = None) -> Agent:
         """Create technical analysis agent.
