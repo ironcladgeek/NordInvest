@@ -42,35 +42,6 @@ class CrewAIAgentFactory:
         self.llm_client = initialize_llm_client(self.llm_config)
         logger.info(f"Initialized CrewAI factory with {self.llm_config.provider} provider")
 
-    def create_market_scanner_agent(self, tools: list = None) -> Agent:
-        """Create market scanner agent.
-
-        Args:
-            tools: List of tools available to the agent
-
-        Returns:
-            Configured CrewAI Agent for market scanning
-        """
-        return Agent(
-            role="Market Scanner Analyst",
-            goal=(
-                "Scan financial markets to identify instruments with significant price movements, "
-                "unusual volume patterns, and anomalies that warrant deeper analysis"
-            ),
-            backstory=(
-                "You are an expert market analyst with deep knowledge of technical patterns and "
-                "market microstructure. You excel at detecting emerging trends, unusual volume "
-                "patterns, and price movements that signal potential trading opportunities. "
-                "Your keen eye for detail helps identify instruments that deserve deeper analysis. "
-                "You consider both daily and weekly price movements, volume anomalies, and positions "
-                "at technical extremes." + self.TOOL_FORMAT_INSTRUCTION
-            ),
-            tools=tools or [],
-            llm=self.llm_client,
-            verbose=False,
-            allow_delegation=False,
-        )
-
     def create_technical_analysis_agent(self, tools: list = None) -> Agent:
         """Create technical analysis agent.
 
@@ -210,44 +181,6 @@ class CrewAIAgentFactory:
 
 class CrewAITaskFactory:
     """Factory for creating structured CrewAI tasks."""
-
-    @staticmethod
-    def create_market_scan_task(
-        agent: Agent,
-        ticker: str,
-        context: dict[str, Any],
-    ) -> Task:
-        """Create market scanning task.
-
-        Args:
-            agent: Market scanner agent
-            ticker: Stock ticker symbol
-            context: Additional context for the scan
-
-        Returns:
-            Configured Task object
-        """
-        return Task(
-            description=(
-                f"Scan {ticker} for market anomalies and trading signals.\n"
-                f"Analyze the following data:\n"
-                f"- Price movements (daily and weekly changes)\n"
-                f"- Volume patterns and anomalies\n"
-                f"- Technical extremes (30-day highs/lows)\n"
-                f"\n"
-                f"Identify:\n"
-                f"1. Significant price movements (>5% daily, >15% weekly)\n"
-                f"2. Unusual volume spikes (>1.5x average)\n"
-                f"3. New 30-day highs or lows\n"
-                f"4. Any other market anomalies\n"
-                f"\n"
-                f"Provide a clear assessment of whether {ticker} warrants deeper analysis."
-            ),
-            agent=agent,
-            expected_output=(
-                "List of anomalies found with explanations and recommendation to analyze further"
-            ),
-        )
 
     @staticmethod
     def create_technical_analysis_task(

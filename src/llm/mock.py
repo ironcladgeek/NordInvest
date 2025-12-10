@@ -16,21 +16,6 @@ class MockLLMClient:
 
     # Default mock responses for different agent types
     DEFAULT_RESPONSES = {
-        "market_scanner": {
-            "status": "success",
-            "instruments": [
-                {
-                    "ticker": "AAPL",
-                    "anomalies": [
-                        "Strong technical momentum (RSI > 65)",
-                        "Positive sentiment shift (recent news +0.70)",
-                    ],
-                    "anomaly_score": 78,
-                    "severity": "high",
-                }
-            ],
-            "message": "Scan complete - 1 instrument with anomalies found",
-        },
         "technical_analyst": {
             "analysis": "Technical analysis shows bullish signals with strong uptrend.",
             "indicators": {

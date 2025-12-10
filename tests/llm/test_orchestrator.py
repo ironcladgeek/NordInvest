@@ -97,7 +97,6 @@ class TestLLMAnalysisOrchestrator:
 
         assert orchestrator.llm_config == llm_config
         assert len(orchestrator.hybrid_agents) > 0
-        assert "market_scanner" in orchestrator.hybrid_agents
         assert "technical" in orchestrator.hybrid_agents
         assert "fundamental" in orchestrator.hybrid_agents
         assert "sentiment" in orchestrator.hybrid_agents

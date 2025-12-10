@@ -11,7 +11,6 @@ from src.agents.analysis import (
 )
 from src.agents.crewai_agents import CrewAIAgentFactory, CrewAITaskFactory
 from src.agents.hybrid import HybridAnalysisAgent, HybridAnalysisCrew
-from src.agents.scanner import MarketScannerAgent
 from src.agents.sentiment import SentimentAgent
 from src.analysis.models import UnifiedAnalysisResult
 from src.analysis.normalizer import AnalysisResultNormalizer
@@ -81,26 +80,18 @@ class LLMAnalysisOrchestrator:
         tools = self.tool_adapter.get_crewai_tools()
 
         # Create CrewAI agents with tools
-        market_scanner_crew = self.agent_factory.create_market_scanner_agent(tools)
         technical_crew = self.agent_factory.create_technical_analysis_agent(tools)
         fundamental_crew = self.agent_factory.create_fundamental_analysis_agent(tools)
         sentiment_crew = self.agent_factory.create_sentiment_analysis_agent(tools)
         synthesizer_crew = self.agent_factory.create_signal_synthesizer_agent()
 
         # Create fallback rule-based agents
-        market_scanner_fallback = MarketScannerAgent(config=self.config)
         technical_fallback = TechnicalAnalysisAgent()
         fundamental_fallback = FundamentalAnalysisAgent(db_path=self.db_path)
         sentiment_fallback = SentimentAgent()
 
         # Wrap in hybrid agents
         return {
-            "market_scanner": HybridAnalysisAgent(
-                crewai_agent=market_scanner_crew,
-                fallback_agent=market_scanner_fallback,
-                token_tracker=self.token_tracker,
-                enable_fallback=self.enable_fallback,
-            ),
             "technical": HybridAnalysisAgent(
                 crewai_agent=technical_crew,
                 fallback_agent=technical_fallback,
@@ -194,11 +185,7 @@ class LLMAnalysisOrchestrator:
         if self.debug_dir:
             self._save_debug_data(ticker, "input_context", context)
 
-        # Create tasks for each agent
-        market_scan_task = self.task_factory.create_market_scan_task(
-            self.hybrid_agents["market_scanner"].crewai_agent, ticker, context
-        )
-
+        # Create tasks for each agent (no market scan - filtering handled externally)
         technical_task = self.task_factory.create_technical_analysis_task(
             self.hybrid_agents["technical"].crewai_agent, ticker, context
         )
@@ -217,7 +204,6 @@ class LLMAnalysisOrchestrator:
                 ticker,
                 "task_inputs",
                 {
-                    "market_scan": market_scan_task.description,
                     "technical": technical_task.description,
                     "fundamental": fundamental_task.description,
                     "sentiment": sentiment_task.description,
@@ -226,7 +212,6 @@ class LLMAnalysisOrchestrator:
 
         # Execute analysis tasks
         tasks = {
-            "market_scan": market_scan_task,
             "technical_analysis": technical_task,
             "fundamental_analysis": fundamental_task,
             "sentiment_analysis": sentiment_task,

@@ -4,37 +4,6 @@
 class PromptTemplates:
     """Collection of prompt templates for analysis agents."""
 
-    MARKET_SCANNER_SYSTEM = """You are an expert market analyst specializing in technical anomaly detection.
-Your role is to analyze financial market data and identify instruments with significant price movements,
-unusual volume patterns, and other anomalies that warrant deeper analysis.
-
-Key responsibilities:
-1. Detect significant price movements (>5% daily, >15% weekly)
-2. Identify unusual volume spikes (>1.5x average volume)
-3. Spot new 30-day highs or lows
-4. Assess whether the instrument warrants deeper fundamental/technical analysis
-
-Provide concise, factual analysis based on the data provided."""
-
-    MARKET_SCANNER_TEMPLATE = """Analyze {ticker} for market anomalies using the following data:
-
-Price Data (last 30 days):
-- Current price: ${current_price}
-- Daily change: {daily_change}%
-- Weekly change: {weekly_change}%
-- 30-day high: ${high_30d}
-- 30-day low: ${low_30d}
-
-Volume Data:
-- Current volume: {current_volume:,}
-- Average volume (5-day): {avg_volume_5d:,}
-- Current/Average ratio: {volume_ratio:.2f}x
-
-Provide:
-1. List of anomalies detected
-2. Assessment of whether this warrants deeper analysis
-3. Confidence level (0-100)"""
-
     TECHNICAL_SYSTEM = """You are a senior technical analyst with expertise in:
 - Chart pattern recognition
 - Technical indicators (moving averages, RSI, MACD, ATR)
@@ -219,29 +188,6 @@ Format response as JSON:
   "reasoning": "detailed explanation of signal",
   "factor_agreement": "high/medium/low"
 }}"""
-
-    @staticmethod
-    def get_market_scanner_prompt(ticker: str, data: dict) -> str:
-        """Get market scanner prompt with data.
-
-        Args:
-            ticker: Stock ticker symbol
-            data: Market data dictionary
-
-        Returns:
-            Formatted prompt
-        """
-        return PromptTemplates.MARKET_SCANNER_TEMPLATE.format(
-            ticker=ticker,
-            current_price=data.get("current_price", "N/A"),
-            daily_change=data.get("daily_change", "N/A"),
-            weekly_change=data.get("weekly_change", "N/A"),
-            high_30d=data.get("high_30d", "N/A"),
-            low_30d=data.get("low_30d", "N/A"),
-            current_volume=data.get("current_volume", 0),
-            avg_volume_5d=data.get("avg_volume_5d", 0),
-            volume_ratio=data.get("volume_ratio", 0),
-        )
 
     @staticmethod
     def get_technical_prompt(ticker: str, data: dict) -> str:
