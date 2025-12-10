@@ -123,7 +123,7 @@ class WebsiteGenerator:
                 ]
             )
             for signal in hold_bullish:
-                lines.extend(self._format_signal(signal, include_details=False))
+                lines.extend(self._format_signal(signal, include_details=True))  # Changed to True
 
         # Add tags section
         lines.extend(
@@ -179,11 +179,35 @@ class WebsiteGenerator:
         ]
 
         if include_details:
+            # Add key reasons section
+            if signal.key_reasons:
+                lines.extend(
+                    [
+                        "💡 **Key Reasons:**",
+                        "",
+                    ]
+                )
+                for reason in signal.key_reasons:
+                    lines.append(f"- {reason}")
+                lines.append("")
+
+            # Add risk flags section
+            if signal.risk and signal.risk.flags:
+                lines.extend(
+                    [
+                        "⚠️ **Risk Flags:**",
+                        "",
+                    ]
+                )
+                for flag in signal.risk.flags:
+                    lines.append(f"- {flag}")
+                lines.append("")
+
             # Add analysis summary
             if signal.rationale:
                 lines.extend(
                     [
-                        "**Analysis:**",
+                        "📝 **Detailed Analysis:**",
                         "",
                         signal.rationale,
                         "",
@@ -208,6 +232,158 @@ class WebsiteGenerator:
                 lines.extend(
                     [
                         f"**Risk Assessment:** {signal.risk.level.value.replace('_', ' ').title()}",
+                        "",
+                    ]
+                )
+
+            # Add detailed metadata tables if available
+            if signal.metadata:
+                lines.extend(
+                    [
+                        "<details>",
+                        "<summary><strong>📊 Analysis Details</strong> (click to expand)</summary>",
+                        "",
+                    ]
+                )
+
+                # Technical Indicators
+                if signal.metadata.technical_indicators:
+                    tech = signal.metadata.technical_indicators
+                    lines.extend(
+                        [
+                            "#### Technical Indicators",
+                            "",
+                            "| Indicator | Value |",
+                            "|-----------|-------|",
+                        ]
+                    )
+
+                    # Get all fields dynamically
+                    tech_dict = tech.model_dump(exclude_none=True)
+
+                    # Display technical indicators in a readable format
+                    for key, value in sorted(tech_dict.items()):
+                        if key == "volume_avg":
+                            continue  # Skip volume for now
+
+                        # Format the key nicely
+                        display_key = key.replace("_", " ").upper()
+
+                        # Format the value
+                        if isinstance(value, (int, float)):
+                            if abs(value) < 1:
+                                formatted_value = f"{value:.4f}"
+                            elif abs(value) < 100:
+                                formatted_value = f"{value:.2f}"
+                            else:
+                                formatted_value = f"{value:.0f}"
+                            lines.append(f"| {display_key} | {formatted_value} |")
+                        else:
+                            lines.append(f"| {display_key} | {value} |")
+
+                    lines.append("")
+
+                # Fundamental Metrics
+                if signal.metadata.fundamental_metrics:
+                    fund = signal.metadata.fundamental_metrics
+                    lines.extend(
+                        [
+                            "#### Fundamental Metrics",
+                            "",
+                            "| Metric | Value |",
+                            "|--------|-------|",
+                        ]
+                    )
+
+                    # Get all fields dynamically
+                    fund_dict = fund.model_dump(exclude_none=True)
+
+                    # Display metrics in a readable format
+                    for key, value in sorted(fund_dict.items()):
+                        # Format the key nicely
+                        display_key = key.replace("_", " ").title()
+
+                        # Format the value based on the metric type
+                        if "margin" in key or "roe" in key or "roa" in key or "growth" in key:
+                            # Display as percentage
+                            formatted_value = (
+                                f"{value:.1%}" if isinstance(value, (int, float)) else str(value)
+                            )
+                        elif "ratio" in key:
+                            formatted_value = (
+                                f"{value:.2f}" if isinstance(value, (int, float)) else str(value)
+                            )
+                        elif isinstance(value, (int, float)):
+                            formatted_value = f"{value:.2f}"
+                        else:
+                            formatted_value = str(value)
+
+                        lines.append(f"| {display_key} | {formatted_value} |")
+
+                    lines.append("")
+
+                # Analyst Ratings
+                if signal.metadata.analyst_info:
+                    analyst = signal.metadata.analyst_info
+                    lines.extend(
+                        [
+                            "#### Analyst Ratings",
+                            "",
+                            "| Metric | Value |",
+                            "|--------|-------|",
+                        ]
+                    )
+
+                    if analyst.num_analysts is not None:
+                        lines.append(f"| Number of Analysts | {analyst.num_analysts} |")
+                    if analyst.consensus_rating:
+                        lines.append(
+                            f"| Consensus | {analyst.consensus_rating.replace('_', ' ').title()} |"
+                        )
+                    if analyst.strong_buy is not None:
+                        lines.append(f"| Strong Buy | {analyst.strong_buy} |")
+                    if analyst.buy is not None:
+                        lines.append(f"| Buy | {analyst.buy} |")
+                    if analyst.hold is not None:
+                        lines.append(f"| Hold | {analyst.hold} |")
+                    if analyst.sell is not None:
+                        lines.append(f"| Sell | {analyst.sell} |")
+                    if analyst.strong_sell is not None:
+                        lines.append(f"| Strong Sell | {analyst.strong_sell} |")
+                    if analyst.price_target is not None:
+                        lines.append(f"| Price Target | ${analyst.price_target:.2f} |")
+
+                    lines.append("")
+
+                # Sentiment Info
+                if signal.metadata.sentiment_info:
+                    sent = signal.metadata.sentiment_info
+                    lines.extend(
+                        [
+                            "#### News & Sentiment",
+                            "",
+                            "| Metric | Value |",
+                            "|--------|-------|",
+                        ]
+                    )
+
+                    if sent.news_count is not None:
+                        lines.append(f"| Total Articles | {sent.news_count} |")
+                    if sent.sentiment_score is not None:
+                        sign = "+" if sent.sentiment_score >= 0 else ""
+                        lines.append(f"| Sentiment Score | {sign}{sent.sentiment_score:.2f} |")
+                    if sent.positive_news is not None:
+                        lines.append(f"| Positive Articles | {sent.positive_news} |")
+                    if sent.neutral_news is not None:
+                        lines.append(f"| Neutral Articles | {sent.neutral_news} |")
+                    if sent.negative_news is not None:
+                        lines.append(f"| Negative Articles | {sent.negative_news} |")
+
+                    lines.append("")
+
+                lines.extend(
+                    [
+                        "</details>",
                         "",
                     ]
                 )
