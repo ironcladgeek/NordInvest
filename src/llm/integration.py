@@ -119,6 +119,12 @@ class LLMAnalysisOrchestrator:
                 token_tracker=self.token_tracker,
                 enable_fallback=self.enable_fallback,
             ),
+            "synthesizer": HybridAnalysisAgent(
+                crewai_agent=synthesizer_crew,
+                fallback_agent=None,
+                token_tracker=self.token_tracker,
+                enable_fallback=False,
+            ),
         }
 
     def _save_debug_data(self, ticker: str, stage: str, data: Any) -> None:

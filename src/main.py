@@ -212,13 +212,6 @@ def _run_llm_analysis(
         ) as progress:
             for ticker in progress:
                 try:
-                    # Create a sub-progress callback for agent tasks
-                    task_names = [
-                        "market_scan",
-                        "technical_analysis",
-                        "fundamental_analysis",
-                        "sentiment_analysis",
-                    ]
                     current_task = [0]  # Use list to allow mutation in nested function
 
                     def agent_progress_callback(current, total, task_name):

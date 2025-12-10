@@ -162,9 +162,9 @@ class TestCLIReportCommand:
     def test_report_command(
         self,
         mock_pipeline_class,
-        mock_provider_manager,
-        mock_init_db,
-        mock_setup_logging,
+        mock_provider_manager,  # noqa: ARG002
+        mock_init_db,  # noqa: ARG002
+        mock_setup_logging,  # noqa: ARG002
         mock_load_config,
         runner,
         temp_config,

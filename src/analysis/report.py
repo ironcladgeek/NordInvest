@@ -1,9 +1,14 @@
 """Report generation for daily market analysis and signals."""
 
+from collections import defaultdict
 from datetime import datetime
 from typing import Any
 
-from src.analysis.models import DailyReport, InvestmentSignal
+from src.analysis.models import (
+    DailyReport,
+    InvestmentSignal,
+    TechnicalIndicators,
+)
 from src.utils.llm_check import check_llm_configuration
 from src.utils.logging import get_logger
 
@@ -671,7 +676,6 @@ def _format_technical_indicators_generic(tech: "TechnicalIndicators") -> list[st
     Returns:
         List of markdown table rows
     """
-    from collections import defaultdict
 
     rows = []
 

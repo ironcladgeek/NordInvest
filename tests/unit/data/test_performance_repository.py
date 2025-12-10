@@ -226,7 +226,6 @@ class TestPerformanceRepository:
         from src.analysis.models import ComponentScores, RiskAssessment
 
         # Create recommendations with different ages
-        signals = []
         for days_ago in [10, 50, 200]:
             signal = InvestmentSignal(
                 ticker=f"TICK{days_ago}",

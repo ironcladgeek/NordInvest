@@ -1,7 +1,15 @@
 """Analysis result normalizer for converting agent outputs to unified structure."""
 
+import json
+import re
 from typing import Any
 
+from src.agents.output_models import (
+    FundamentalAnalysisOutput,
+    SentimentAnalysisOutput,
+    SignalSynthesisOutput,
+    TechnicalAnalysisOutput,
+)
 from src.analysis.models import (
     AnalysisComponentResult,
     AnalystInfo,
@@ -161,7 +169,6 @@ class AnalysisResultNormalizer:
         )
 
         # Extract synthesis data
-        synthesis_data = analysis_data.get("synthesis", {})
         final_score = analysis.get("final_score", 50)
         confidence = analysis.get("confidence", 50)
         recommendation = analysis.get("final_recommendation", "hold")
@@ -417,7 +424,6 @@ class AnalysisResultNormalizer:
         Args:
             tech_result: Technical analysis result (Pydantic model or dict)
         """
-        from src.agents.output_models import TechnicalAnalysisOutput
 
         # Check if we have a Pydantic model
         result_data = tech_result.get("result", {})
@@ -448,8 +454,6 @@ class AnalysisResultNormalizer:
 
         # Convert string to dict
         if isinstance(tech_result, str):
-            import json
-
             try:
                 tech_result = json.loads(tech_result)
                 # Ensure result is a dict
@@ -470,13 +474,12 @@ class AnalysisResultNormalizer:
 
         # If no structured data, parse from markdown (original text or fallback)
         if not indicators_data:
-            text_to_parse = original_text or fallback_text
-            if text_to_parse:
+            if original_text:
                 logger.debug(
-                    f"Parsing technical indicators from markdown (length: {len(text_to_parse)} chars)"
+                    f"Parsing technical indicators from markdown (length: {len(original_text)} chars)"
                 )
                 parsed_indicators = AnalysisResultNormalizer._parse_llm_markdown_for_indicators(
-                    text_to_parse
+                    original_text
                 )
                 logger.debug(f"Parsed indicators: {parsed_indicators}")
                 indicators_data.update(parsed_indicators)
@@ -1211,7 +1214,6 @@ class AnalysisResultNormalizer:
     @staticmethod
     def _parse_fundamental_markdown(result: dict[str, Any]) -> "FundamentalAnalysisOutput":
         """Parse fundamental analysis from markdown (fallback for non-Pydantic output)."""
-        from src.agents.output_models import FundamentalAnalysisOutput
 
         # Extract raw text
         text = ""
@@ -1245,7 +1247,6 @@ class AnalysisResultNormalizer:
     @staticmethod
     def _parse_sentiment_markdown(result: dict[str, Any]) -> "SentimentAnalysisOutput":
         """Parse sentiment analysis from markdown (fallback for non-Pydantic output)."""
-        from src.agents.output_models import SentimentAnalysisOutput
 
         # Extract raw text
         text = ""
@@ -1275,11 +1276,6 @@ class AnalysisResultNormalizer:
     @staticmethod
     def _parse_synthesis_markdown(result: dict[str, Any]) -> "SignalSynthesisOutput":
         """Parse signal synthesis from markdown (fallback for non-Pydantic output)."""
-        # Extract and parse JSON from markdown
-        import json
-        import re
-
-        from src.agents.output_models import SignalSynthesisOutput
 
         synthesis_data = result.get("result", {})
 

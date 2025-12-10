@@ -160,7 +160,7 @@ class TestRiskAssessor:
             (6.0, RiskLevel.VERY_HIGH),  # Very high volatility (> 5.0)
         ]
 
-        for volatility, expected_level in test_cases:
+        for volatility, _ in test_cases:
             signal = {
                 "ticker": f"TEST_{volatility}",
                 "volatility_pct": volatility,

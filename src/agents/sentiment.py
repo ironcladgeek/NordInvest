@@ -118,7 +118,6 @@ class SentimentAgent(BaseAgent):
                 }
 
             # Check if we have pre-calculated scores or need LLM analysis
-            has_precalculated = sentiment.get("has_precalculated_scores", False)
             requires_llm = sentiment.get("requires_llm_analysis", False)
 
             if requires_llm:

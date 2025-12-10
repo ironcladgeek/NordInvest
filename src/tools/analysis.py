@@ -94,9 +94,6 @@ class TechnicalIndicatorTool(BaseTool):
             # Use generic extraction to get all indicator values
             from src.analysis.normalizer import AnalysisResultNormalizer
 
-            # Create a dict with full_analysis structure for generic extraction
-            mock_tech_data = {"indicators": {"full_analysis": results}}
-
             # Use the generic flattening logic
             indicator_count = 0
             for indicator_key, indicator_value in indicators.items():

@@ -118,8 +118,10 @@ class TestLLMAnalysisOrchestrator:
 
         for agent_name, hybrid_agent in orchestrator.hybrid_agents.items():
             assert hybrid_agent.crewai_agent is not None
-            assert hybrid_agent.fallback_agent is not None
-            assert hybrid_agent.enable_fallback is True
+            # Synthesizer agent doesn't need fallback
+            if agent_name != "synthesizer":
+                assert hybrid_agent.fallback_agent is not None
+                assert hybrid_agent.enable_fallback is True
 
     def test_tool_adapter_creation(self, llm_config):
         """Test tool adapter initialization."""

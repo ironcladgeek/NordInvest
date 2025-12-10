@@ -53,11 +53,6 @@ class RiskAssessor:
         final_score = signal.get("final_score", 50)
         confidence = signal.get("confidence", 50)
 
-        # Extract risk indicators from signal
-        technical_score = signal.get("scores", {}).get("technical", 50)
-        fundamental_score = signal.get("scores", {}).get("fundamental", 50)
-        sentiment_score = signal.get("scores", {}).get("sentiment", 50)
-
         # Assess volatility
         volatility_pct = signal.get("volatility_pct", 2.0)
         volatility_level = self._assess_volatility(volatility_pct)
@@ -215,7 +210,6 @@ class RiskAssessor:
         ticker = signal.get("ticker", "UNKNOWN")
         confidence = signal.get("confidence", 50)
         final_score = signal.get("final_score", 50)
-        expected_return_min = signal.get("expected_return_min", 0)
         expected_return_max = signal.get("expected_return_max", 10)
 
         # Low confidence warning
