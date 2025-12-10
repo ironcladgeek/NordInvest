@@ -282,7 +282,6 @@ US_MID_CAP = [
     "TTD",  # Trade Desk
     "PAYC",  # Paycom
     "PCTY",  # Paylocity
-    "SMAR",  # Smartsheet
     "CFLT",  # Confluent
     "ESTC",  # Elastic
     "DT",  # Dynatrace
@@ -372,7 +371,6 @@ US_TECH_SOFTWARE = [
     "OKTA",  # Okta
     "WDAY",  # Workday
     "VEEV",  # Veeva Systems
-    "SPLK",  # Splunk
     "TEAM",  # Atlassian
     "ZM",  # Zoom
     "DOCU",  # DocuSign
@@ -383,7 +381,6 @@ US_TECH_SOFTWARE = [
     "PAYC",  # Paycom
     "PCTY",  # Paylocity
     "PATH",  # UiPath
-    "SMAR",  # Smartsheet
     "CFLT",  # Confluent
     "ESTC",  # Elastic
     "GTLB",  # GitLab
@@ -519,7 +516,6 @@ US_HEALTHCARE_PHARMA = [
     "SNY",  # Sanofi
     "ZTS",  # Zoetis
     "ALNY",  # Alnylam Pharmaceuticals
-    "SGEN",  # Seagen
     "BMRN",  # BioMarin
     "INCY",  # Incyte
     "SRPT",  # Sarepta Therapeutics
@@ -611,14 +607,12 @@ US_FINANCIALS_FINTECH = [
     "SOFI",  # SoFi Technologies
     "HOOD",  # Robinhood
     "AXP",  # American Express
-    "DFS",  # Discover Financial
     "COF",  # Capital One
     "SYF",  # Synchrony Financial
     "ALLY",  # Ally Financial
     "GPN",  # Global Payments
     "FIS",  # Fidelity National
     "FISV",  # Fiserv
-    "FLT",  # Fleetcor
     "WEX",  # WEX Inc
     "FOUR",  # Shift4 Payments
     "TOST",  # Toast
@@ -626,7 +620,6 @@ US_FINANCIALS_FINTECH = [
     "PAYO",  # Payoneer
     "RELY",  # Remitly Global
     "BILL",  # Bill Holdings
-    "NVEI",  # Nuvei Corporation
     "FLYW",  # Flywire
     "PSFE",  # Paysafe
     "LMND",  # Lemonade
@@ -1104,7 +1097,6 @@ US_CYBERSECURITY = [
     "MSFT",  # Microsoft Security
     "GOOGL",  # Google Cloud Security
     "AMZN",  # AWS Security
-    "SPLK",  # Splunk
     "AKAM",  # Akamai
     "FFIV",  # F5 Networks
     "A10",  # A10 Networks
