@@ -93,7 +93,7 @@ class FinBERTSentimentScorer:
         )
 
         self._loaded = True
-        logger.info(f"FinBERT pipeline loaded successfully")
+        logger.info("FinBERT pipeline loaded successfully")
 
     def score_text(self, text: str) -> SentimentScore:
         """Score sentiment for a single text.

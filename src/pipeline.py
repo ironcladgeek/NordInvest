@@ -254,7 +254,7 @@ class AnalysisPipeline:
                 )
 
             if not signals:
-                logger.warning(f"No signals found in database for specified criteria")
+                logger.warning("No signals found in database for specified criteria")
                 signals = []  # Empty list for report generation
 
         logger.debug(f"Generating daily report with {len(signals)} signals from {data_source}")

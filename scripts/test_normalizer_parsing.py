@@ -17,7 +17,7 @@ print("=" * 60)
 result = AnalysisResultNormalizer._parse_llm_markdown_for_indicators(tech_text)
 print(f"Input text:\n{tech_text}")
 print(f"\nParsed result: {result}")
-print(f"Expected: rsi=80.80, macd=8.36, macd_signal=5.52, atr=6.59, volume_ratio=0.84")
+print("Expected: rsi=80.80, macd=8.36, macd_signal=5.52, atr=6.59, volume_ratio=0.84")
 
 # Test fundamental parsing
 fund_text = """
@@ -35,7 +35,7 @@ print("=" * 60)
 result = AnalysisResultNormalizer._parse_llm_markdown_for_fundamentals(fund_text)
 print(f"Input text:\n{fund_text}")
 print(f"\nParsed result: {result}")
-print(f"Expected: analyst_consensus with total_analysts=20, bullish_count=15, bullish_pct=75")
+print("Expected: analyst_consensus with total_analysts=20, bullish_count=15, bullish_pct=75")
 
 # Test sentiment parsing
 sent_text = """
@@ -51,4 +51,4 @@ print("=" * 60)
 result = AnalysisResultNormalizer._parse_llm_markdown_for_sentiment(sent_text)
 print(f"Input text:\n{sent_text}")
 print(f"\nParsed result: {result}")
-print(f"Expected: positive_count=7, negative_count=2, neutral_count=1, total_articles=10")
+print("Expected: positive_count=7, negative_count=2, neutral_count=1, total_articles=10")
