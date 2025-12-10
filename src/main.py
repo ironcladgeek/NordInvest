@@ -3,7 +3,7 @@
 import json
 import sys
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
 
 import typer
@@ -1390,11 +1390,9 @@ def download_prices(
         # Initialize rate limiter (conservative: 5 requests per second)
         rate_limiter = RateLimiter(rate=5, period=1.0)
 
-        # Calculate date range
-        end_date = datetime.now().date()
-        start_date = end_date - timedelta(days=config_obj.analysis.historical_data_lookback_days)
-
-        typer.echo(f"  Date range: {start_date} to {end_date}")
+        # Use period parameter for fetching
+        period = f"{config_obj.analysis.historical_data_lookback_days}d"
+        typer.echo(f"  Period: {period}")
         if force_refresh:
             typer.echo("  Force refresh: enabled (will re-download all data)")
         typer.echo()
@@ -1411,8 +1409,9 @@ def download_prices(
                 try:
                     # Check if we need to download
                     if not force_refresh and price_manager.has_data(ticker):
-                        existing_start, existing_end = price_manager.get_data_range(ticker)
-                        if existing_end and existing_end >= end_date - timedelta(days=1):
+                        # Check if data is relatively current (within last 2 days)
+                        _, existing_end = price_manager.get_data_range(ticker)
+                        if existing_end and (datetime.now().date() - existing_end).days <= 2:
                             logger.debug(f"Skipping {ticker} - data is current")
                             skipped_count += 1
                             continue
@@ -1420,11 +1419,8 @@ def download_prices(
                     # Wait for rate limiter
                     rate_limiter.wait_if_needed(tokens=1)
 
-                    # Fetch prices using provider manager
-                    start_dt = datetime.combine(start_date, datetime.min.time())
-                    end_dt = datetime.combine(end_date, datetime.min.time())
-
-                    prices = provider_manager.get_stock_prices(ticker, start_dt, end_dt)
+                    # Fetch prices using provider manager with period parameter
+                    prices = provider_manager.get_stock_prices(ticker, period=period)
 
                     if prices:
                         # Store to CSV

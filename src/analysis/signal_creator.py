@@ -4,7 +4,7 @@ This module provides a single SignalCreator class that creates InvestmentSignal
 objects from UnifiedAnalysisResult, working identically for both LLM and rule-based modes.
 """
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Any
 
 from src.analysis.metadata_extractor import extract_metadata_from_unified_result
@@ -170,11 +170,8 @@ class SignalCreator:
             return None
 
         try:
-            # Fetch prices for a small window around target date
-            start_date = datetime.combine(target_date, datetime.min.time())
-            end_date = datetime.combine(target_date + timedelta(days=1), datetime.min.time())
-
-            prices = self.provider_manager.get_stock_prices(ticker, start_date, end_date)
+            # Fetch recent prices using period parameter (get 5 days to ensure we have target date)
+            prices = self.provider_manager.get_stock_prices(ticker, period="5d")
             if not prices:
                 logger.warning(f"No historical prices found for {ticker} around {target_date}")
                 return None

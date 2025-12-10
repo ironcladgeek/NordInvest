@@ -140,7 +140,10 @@ class PriceFetcherTool(BaseTool):
             if self.use_unified_storage:
                 return self._fetch_with_unified_storage(ticker, start_d, end_d, days_back, period)
             else:
-                return self._fetch_with_legacy_cache(ticker, start_date, end_date)
+                # Legacy cache: use period if provided, otherwise create from days_back
+                if period is None:
+                    period = f"{days_back}d" if days_back else "730d"
+                return self._fetch_with_legacy_cache(ticker, period)
 
         except Exception as e:
             logger.error(f"Error fetching prices for {ticker}: {e}")
@@ -362,31 +365,27 @@ class PriceFetcherTool(BaseTool):
     def _fetch_with_legacy_cache(
         self,
         ticker: str,
-        start_date: datetime,
-        end_date: datetime,
+        period: str,
     ) -> dict[str, Any]:
         """Fetch prices using legacy JSON cache (backward compatibility).
 
         Args:
             ticker: Stock ticker symbol
-            start_date: Start date
-            end_date: End date
+            period: Period string (e.g., '730d')
 
         Returns:
             Dictionary with prices and metadata
         """
-        # Check cache first
-        cache_key = (
-            f"prices:{ticker}:{start_date.strftime('%Y-%m-%d')}:{end_date.strftime('%Y-%m-%d')}"
-        )
+        # Check cache first (use period in cache key)
+        cache_key = f"prices:{ticker}:{period}"
         cached = self.cache_manager.get(cache_key)
         if cached:
             logger.debug(f"Cache hit for {ticker} prices")
             return cached
 
-        # Fetch from provider
-        logger.debug(f"Fetching prices for {ticker}")
-        prices = self.provider.get_stock_prices(ticker, start_date, end_date)
+        # Fetch from provider using period
+        logger.debug(f"Fetching prices for {ticker} (period={period})")
+        prices = self.provider.get_stock_prices(ticker, period=period)
 
         if not prices:
             return {
@@ -401,8 +400,7 @@ class PriceFetcherTool(BaseTool):
             "ticker": ticker,
             "prices": [p.model_dump() for p in prices],
             "count": len(prices),
-            "start_date": start_date.isoformat(),
-            "end_date": end_date.isoformat(),
+            "period": period,
             "latest_price": prices[-1].close_price,
             "storage": "legacy_json",
         }
@@ -660,17 +658,8 @@ class FinancialDataFetcherTool(BaseTool):
             Dictionary with change_percent and trend
         """
         try:
-            # Get last 30 days of price data, respecting historical date if set
-            end_date = datetime.now()
-            if self.historical_date:
-                end_date = datetime.combine(self.historical_date, datetime.max.time())
-                logger.debug(f"Using historical end_date {end_date.date()} for price context")
-
-            start_date = end_date - timedelta(days=30)
-
-            prices = self.price_provider.get_stock_prices(
-                ticker, start_date=start_date, end_date=end_date
-            )
+            # Get last 30 days of price data using period parameter
+            prices = self.price_provider.get_stock_prices(ticker, period="30d")
 
             if len(prices) < 2:
                 return {"change_percent": 0, "trend": "neutral"}

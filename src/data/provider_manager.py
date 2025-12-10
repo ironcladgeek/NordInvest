@@ -92,15 +92,13 @@ class ProviderManager:
     def get_stock_prices(
         self,
         ticker: str,
-        start_date: datetime,
-        end_date: datetime,
+        period: str | None = None,
     ) -> list[StockPrice]:
         """Fetch stock prices with automatic fallback.
 
         Args:
             ticker: Stock ticker symbol
-            start_date: Start date for historical data
-            end_date: End date for historical data
+            period: Period string (e.g., '730d', '60d'). If None, uses historical_data_lookback_days
 
         Returns:
             List of StockPrice objects
@@ -111,8 +109,9 @@ class ProviderManager:
         providers_to_try = [self.primary_provider] + self.backup_providers
         errors = []
 
-        # Use configured lookback days for Yahoo Finance period parameter
-        period = f"{self.historical_data_lookback_days}d"
+        # Use configured lookback days if period not specified
+        if period is None:
+            period = f"{self.historical_data_lookback_days}d"
 
         for provider in providers_to_try:
             if not provider.is_available:
@@ -120,18 +119,18 @@ class ProviderManager:
                 continue
 
             try:
-                # Use period parameter for Yahoo Finance (more reliable and returns exact trading days)
+                # Use period parameter for Yahoo Finance
                 if provider.name == "yahoo_finance":
                     logger.debug(
                         f"Fetching prices for {ticker} using {provider.name} (period={period})"
                     )
                     prices = provider.get_stock_prices(ticker, period=period)
                 else:
-                    logger.debug(
-                        f"Fetching prices for {ticker} using {provider.name} "
-                        f"({start_date.date()} to {end_date.date()})"
+                    # Other providers don't support period, skip them for price fetching
+                    logger.debug(f"Provider {provider.name} doesn't support period-based fetching")
+                    raise NotImplementedError(
+                        f"{provider.name} requires date ranges, not supported"
                     )
-                    prices = provider.get_stock_prices(ticker, start_date, end_date)
 
                 if prices:
                     logger.debug(f"Successfully fetched {len(prices)} prices from {provider.name}")
