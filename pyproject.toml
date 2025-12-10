@@ -25,6 +25,9 @@ dependencies = [
     "torch>=2.9.1",
     "transformers>=4.57.3",
     "pandas-ta>=0.4.71b0",
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.7.0",
+    "mkdocs-awesome-pages-plugin>=2.10.1",
 ]
 
 [dependency-groups]

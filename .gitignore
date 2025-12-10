@@ -48,6 +48,9 @@ coverage.xml
 *.cover
 *.py.cover
 .hypothesis/
+
+# MkDocs
+website/site/
 .pytest_cache/
 cover/
 
