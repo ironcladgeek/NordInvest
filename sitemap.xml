@@ -2,18 +2,114 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://nordinvest.yourdomain.com/</loc>
-         <lastmod>2025-12-10</lastmod>
+         <lastmod>2025-12-11</lastmod>
     </url>
     <url>
          <loc>https://nordinvest.yourdomain.com/reports/</loc>
-         <lastmod>2025-12-10</lastmod>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/reports/2025-12-10/</loc>
+         <lastmod>2025-12-11</lastmod>
     </url>
     <url>
          <loc>https://nordinvest.yourdomain.com/tags/</loc>
-         <lastmod>2025-12-10</lastmod>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tags/2025-12-10/</loc>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tags/ALNY/</loc>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tags/ARWR/</loc>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tags/BMY/</loc>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tags/CFLT/</loc>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tags/NVDA/</loc>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tags/SNOW/</loc>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tags/SNY/</loc>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tags/SRPT/</loc>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tags/TDG/</loc>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tags/TXT/</loc>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tags/buy/</loc>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tags/hold/</loc>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tags/hold_bearish/</loc>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tags/hold_bullish/</loc>
+         <lastmod>2025-12-11</lastmod>
     </url>
     <url>
          <loc>https://nordinvest.yourdomain.com/tickers/</loc>
-         <lastmod>2025-12-10</lastmod>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tickers/ALNY/</loc>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tickers/ARWR/</loc>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tickers/BMY/</loc>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tickers/CFLT/</loc>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tickers/NVDA/</loc>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tickers/SNOW/</loc>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tickers/SNY/</loc>
+         <lastmod>2025-12-11</lastmod>
+    </url>
+    <url>
+         <loc>https://nordinvest.yourdomain.com/tickers/SRPT/</loc>
+         <lastmod>2025-12-11</lastmod>
     </url>
 </urlset>
