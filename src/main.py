@@ -910,7 +910,7 @@ def analyze(
                 signal_count=signals_count,
                 error_message=str(e),
             )
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
     except ValueError as e:
         logger.error(f"Configuration validation error: {e}")
         typer.echo(f"❌ Configuration error: {e}", err=True)
@@ -922,7 +922,7 @@ def analyze(
                 signal_count=signals_count,
                 error_message=str(e),
             )
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
     except Exception as e:
         logger.exception(f"Unexpected error during analysis run: {e}")
         typer.echo(f"❌ Error: {e}", err=True)
@@ -934,7 +934,7 @@ def analyze(
                 signal_count=signals_count,
                 error_message=str(e),
             )
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command()
@@ -953,7 +953,10 @@ def report(
     signal_type: str | None = typer.Option(
         None,
         "--signal-type",
-        help="Filter by signal type: 'strong_buy', 'buy', 'hold', 'sell', 'strong_sell'",
+        help=(
+            "Filter by signal type: 'strong_buy', 'buy', 'hold_bullish', 'hold', 'hold_bearish', "
+            "'sell', 'strong_sell'"
+        ),
     ),
     confidence_threshold: float | None = typer.Option(
         None,
@@ -1187,7 +1190,10 @@ def publish(
     signal_type: str | None = typer.Option(
         None,
         "--signal-type",
-        help="Filter by signal type: 'strong_buy', 'buy', 'hold', 'sell', 'strong_sell'",
+        help=(
+            "Filter by signal type: 'strong_buy', 'buy', 'hold_bullish', 'hold', 'hold_bearish', "
+            "'sell', 'strong_sell'"
+        ),
     ),
     confidence_threshold: float | None = typer.Option(
         None,
