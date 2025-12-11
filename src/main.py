@@ -745,9 +745,9 @@ def analyze(
                 analysis_mode="llm" if use_llm else "rule_based",
                 analyzed_category=analyzed_group,
                 analyzed_market=analyzed_market,
-                analyzed_tickers_specified=analyzed_tickers_specified
-                if analyzed_tickers_specified
-                else None,
+                analyzed_tickers_specified=(
+                    analyzed_tickers_specified if analyzed_tickers_specified else None
+                ),
                 initial_tickers_count=len(ticker_list),
                 anomalies_count=0,  # Will be updated after filtering
                 force_full_analysis=force_full_analysis,

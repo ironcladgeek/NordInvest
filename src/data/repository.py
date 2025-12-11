@@ -763,9 +763,11 @@ class RecommendationsRepository:
 
         # Create RiskAssessment
         risk = RiskAssessment(
-            level=RiskLevel(recommendation.risk_level)
-            if recommendation.risk_level
-            else RiskLevel.MEDIUM,
+            level=(
+                RiskLevel(recommendation.risk_level)
+                if recommendation.risk_level
+                else RiskLevel.MEDIUM
+            ),
             volatility=recommendation.risk_volatility or "normal",
             volatility_pct=recommendation.risk_volatility_pct or 0.0,
             liquidity="normal",  # Default - not stored in recommendations table
@@ -1078,9 +1080,9 @@ class RecommendationsRepository:
                             "recommendation": rec.signal_type,
                             "confidence": rec.confidence,
                             "current_price": rec.current_price,
-                            "analysis_date": rec.analysis_date.isoformat()
-                            if rec.analysis_date
-                            else None,
+                            "analysis_date": (
+                                rec.analysis_date.isoformat() if rec.analysis_date else None
+                            ),
                             "analysis_mode": rec.analysis_mode,
                             "reasoning": rec.rationale,
                         }
