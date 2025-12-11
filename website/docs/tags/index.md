@@ -4,16 +4,21 @@ Browse analysis by ticker, signal type, or date.
 
 ## By Ticker
 
+- [ADBE](ADBE.md)
+- [AI](AI.md)
 - [ALNY](ALNY.md)
 - [ARWR](ARWR.md)
 - [ASTS](ASTS.md)
 - [AXON](AXON.md)
 - [BMY](BMY.md)
 - [CFLT](CFLT.md)
+- [CRM](CRM.md)
 - [MNTS](MNTS.md)
 - [NVDA](NVDA.md)
+- [PATH](PATH.md)
 - [PL](PL.md)
 - [PLTR](PLTR.md)
+- [PRCT](PRCT.md)
 - [RDW](RDW.md)
 - [RKLB](RKLB.md)
 - [SATL](SATL.md)
