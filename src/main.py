@@ -1266,9 +1266,9 @@ def publish(
         if date:
             try:
                 datetime.strptime(date, "%Y-%m-%d")
-            except ValueError:
+            except ValueError as e:
                 typer.echo(f"❌ Error: Invalid date format '{date}'. Use YYYY-MM-DD", err=True)
-                raise typer.Exit(code=1)
+                raise typer.Exit(code=1) from e
 
         # Load configuration
         config_obj = load_config(config)
@@ -1457,7 +1457,7 @@ def publish(
     except Exception as e:
         logger.error(f"Error publishing website: {e}", exc_info=True)
         typer.echo(f"\n❌ Error publishing website: {e}", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command()
@@ -1824,15 +1824,15 @@ def download_prices(
     except FileNotFoundError as e:
         logger.error(f"Configuration error: {e}")
         typer.echo(f"❌ Error: {e}", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
     except ValueError as e:
         logger.error(f"Configuration validation error: {e}")
         typer.echo(f"❌ Configuration error: {e}", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
     except Exception as e:
         logger.exception(f"Unexpected error during download: {e}")
         typer.echo(f"❌ Error: {e}", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command()
@@ -1875,7 +1875,7 @@ def config_init(
     except Exception as e:
         logger.exception(f"Error initializing configuration: {e}")
         typer.echo(f"❌ Error: {e}", err=True)
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 @app.command()
