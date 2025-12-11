@@ -4,10 +4,14 @@ Provides high-level repository interfaces for storing and retrieving historical
 analyst ratings and other time-sensitive data from the SQLite database.
 """
 
-from datetime import date, datetime
+import json
+import statistics
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
+import yfinance as yf
 from loguru import logger
+from sqlalchemy import func
 from sqlmodel import and_, select
 
 from src.data.db import DatabaseManager
@@ -20,6 +24,51 @@ from src.data.models import (
     RunSession,
     Ticker,
 )
+
+
+def get_or_create_ticker(session, ticker_symbol: str, name: str = "") -> Ticker:
+    """Get existing ticker or create new one.
+
+    Shared helper function used by multiple repositories to ensure consistent
+    ticker creation with automatic company name fetching.
+
+    Args:
+        session: Database session.
+        ticker_symbol: Ticker symbol (e.g., 'AAPL').
+        name: Company name (optional, will be fetched if not provided).
+
+    Returns:
+        Ticker object.
+    """
+    ticker_symbol = ticker_symbol.upper()
+
+    # Check if ticker already exists
+    existing = session.exec(select(Ticker).where(Ticker.symbol == ticker_symbol)).first()
+
+    if existing:
+        return existing
+
+    # Fetch company name if not provided or if it's just the ticker symbol
+    if not name or name == ticker_symbol:
+        try:
+            ticker_obj = yf.Ticker(ticker_symbol)
+            info = ticker_obj.info
+            name = info.get("longName") or info.get("shortName") or ticker_symbol
+            logger.debug(f"Fetched company name for {ticker_symbol}: {name}")
+        except Exception as e:
+            logger.warning(f"Could not fetch company name for {ticker_symbol}: {e}")
+            name = ticker_symbol
+
+    # Create new ticker
+    new_ticker = Ticker(
+        symbol=ticker_symbol,
+        name=name,
+        market="us",  # Default, can be overridden later
+        instrument_type="stock",
+    )
+    session.add(new_ticker)
+    session.flush()  # Flush to get the ID without committing
+    return new_ticker
 
 
 class AnalystRatingsRepository:
@@ -38,36 +87,6 @@ class AnalystRatingsRepository:
         # Create instance-specific database manager (not global) for better test isolation
         self.db_manager = DatabaseManager(db_path)
         self.db_manager.initialize()
-
-    def _get_or_create_ticker(self, session, ticker_symbol: str, name: str = "") -> Ticker:
-        """Get existing ticker or create new one.
-
-        Args:
-            session: Database session.
-            ticker_symbol: Ticker symbol (e.g., 'AAPL').
-            name: Company name (optional, defaults to symbol).
-
-        Returns:
-            Ticker object.
-        """
-        ticker_symbol = ticker_symbol.upper()
-
-        # Check if ticker already exists
-        existing = session.exec(select(Ticker).where(Ticker.symbol == ticker_symbol)).first()
-
-        if existing:
-            return existing
-
-        # Create new ticker
-        new_ticker = Ticker(
-            symbol=ticker_symbol,
-            name=name or ticker_symbol,
-            market="us",  # Default, can be overridden later
-            instrument_type="stock",
-        )
-        session.add(new_ticker)
-        session.flush()  # Flush to get the ID without committing
-        return new_ticker
 
     def store_ratings(self, ratings: AnalystRating, data_source: str = "unknown") -> bool:
         """Store analyst ratings for a specific month.
@@ -96,7 +115,7 @@ class AnalystRatingsRepository:
             session = self.db_manager.get_session()
             try:
                 # Get or create ticker (handles foreign key relationship)
-                ticker_obj = self._get_or_create_ticker(session, ticker, ratings.name)
+                ticker_obj = get_or_create_ticker(session, ticker, ratings.name)
 
                 # Check if record exists
                 existing = session.exec(
@@ -332,8 +351,6 @@ class AnalystRatingsRepository:
             session = self.db_manager.get_session()
             try:
                 # SQLModel doesn't have count() directly, so use func.count()
-                from sqlalchemy import func
-
                 count = session.exec(select(func.count(AnalystData.id))).one()
                 return count or 0
 
@@ -455,7 +472,6 @@ class RunSessionRepository:
         Returns:
             Session ID (auto-incrementing integer).
         """
-        import json
 
         try:
             session = self.db_manager.get_session()
@@ -623,36 +639,6 @@ class RecommendationsRepository:
         self.db_manager = DatabaseManager(db_path)
         self.db_manager.initialize()
 
-    def _get_or_create_ticker(self, session, ticker_symbol: str, name: str = "") -> Ticker:
-        """Get existing ticker or create new one.
-
-        Args:
-            session: Database session.
-            ticker_symbol: Ticker symbol (e.g., 'AAPL').
-            name: Company name (optional, defaults to symbol).
-
-        Returns:
-            Ticker object.
-        """
-        ticker_symbol = ticker_symbol.upper()
-
-        # Check if ticker already exists
-        existing = session.exec(select(Ticker).where(Ticker.symbol == ticker_symbol)).first()
-
-        if existing:
-            return existing
-
-        # Create new ticker
-        new_ticker = Ticker(
-            symbol=ticker_symbol,
-            name=name or ticker_symbol,
-            market="us",  # Default, can be overridden later
-            instrument_type="stock",
-        )
-        session.add(new_ticker)
-        session.flush()  # Flush to get the ID without committing
-        return new_ticker
-
     def store_recommendation(
         self,
         signal,  # InvestmentSignal type (imported dynamically to avoid circular import)
@@ -671,14 +657,12 @@ class RecommendationsRepository:
         Returns:
             recommendation_id (auto-incrementing integer).
         """
-        import json
-        from datetime import datetime
 
         try:
             session = self.db_manager.get_session()
             try:
                 # Get or create ticker
-                ticker_obj = self._get_or_create_ticker(session, signal.ticker, signal.name)
+                ticker_obj = get_or_create_ticker(session, signal.ticker, signal.name)
 
                 # Convert analysis_date string to date object
                 if isinstance(signal.analysis_date, str):
@@ -750,8 +734,6 @@ class RecommendationsRepository:
         Returns:
             InvestmentSignal Pydantic model.
         """
-        import json
-
         from src.analysis import InvestmentSignal
         from src.analysis.models import AnalysisMetadata, ComponentScores, RiskAssessment, RiskLevel
         from src.analysis.models import Recommendation as RecommendationType
@@ -853,8 +835,6 @@ class RecommendationsRepository:
         Returns:
             List of InvestmentSignal Pydantic models.
         """
-        from datetime import datetime
-
         try:
             # Convert string to date if needed
             if isinstance(report_date, str):
@@ -1160,10 +1140,6 @@ class PerformanceRepository:
             session = self.db_manager.get_session()
             try:
                 # Calculate cutoff date
-                from datetime import timedelta
-
-                from sqlmodel import select
-
                 cutoff_date = date.today() - timedelta(days=max_age_days)
 
                 # Build query with eager loading of ticker relationship
@@ -1213,8 +1189,6 @@ class PerformanceRepository:
             session = self.db_manager.get_session()
             try:
                 # Build query to get recommendations and their tracking data
-                from datetime import timedelta
-
                 cutoff_date = date.today() - timedelta(days=period_days)
 
                 # Base query for recommendations
@@ -1257,8 +1231,6 @@ class PerformanceRepository:
                     confidences.append(rec.confidence)
 
                 # Calculate metrics
-                import statistics
-
                 total_recommendations = len(recommendations)
                 avg_return = statistics.mean(returns) if returns else None
                 median_return = statistics.median(returns) if returns else None
