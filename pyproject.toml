@@ -71,7 +71,7 @@ filterwarnings = [
 # Poethepoet task definitions
 # Usage: uv run poe <task>
 [tool.poe.tasks]
-lint = "sh -c 'ruff check --select I --select F --fix && ruff format'"
+lint = "sh -c 'ruff check --select I --select F --select B --select W --fix && ruff format'"
 pre-commit = "pre-commit run --all-files"
 rmpycache = "find . -type d -name '__pycache__' -exec rm -rf {} +"
 rmdatacache = "find data/cache \\( -name '*.json' -o -name '*.csv' \\) -exec rm -f {} +"
