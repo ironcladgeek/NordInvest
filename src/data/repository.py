@@ -1097,6 +1097,48 @@ class RecommendationsRepository:
             logger.error(f"Error retrieving recommendations for ticker {ticker}: {e}")
             return []
 
+    def get_recent_analysis_dates(self, limit: int = 10) -> list[dict]:
+        """Get recent analysis dates with signal counts.
+
+        This method retrieves distinct analysis dates from recommendations,
+        ordered by most recent first, with the count of signals for each date.
+
+        Args:
+            limit: Maximum number of dates to return
+
+        Returns:
+            List of dicts with 'date' and 'signals_count' keys
+        """
+        try:
+            session = self.db_manager.get_session()
+            try:
+                from sqlalchemy import func
+
+                # Query to get distinct analysis dates with counts
+                stmt = (
+                    select(
+                        Recommendation.analysis_date,
+                        func.count(Recommendation.id).label("count"),
+                    )
+                    .group_by(Recommendation.analysis_date)
+                    .order_by(Recommendation.analysis_date.desc())
+                    .limit(limit)
+                )
+
+                results = session.exec(stmt).all()
+
+                return [
+                    {"date": result[0].isoformat(), "signals_count": result[1]}
+                    for result in results
+                ]
+
+            finally:
+                session.close()
+
+        except Exception as e:
+            logger.error(f"Error retrieving recent analysis dates: {e}")
+            return []
+
 
 class PerformanceRepository:
     """Repository for tracking recommendation performance.
