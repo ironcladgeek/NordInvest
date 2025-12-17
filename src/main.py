@@ -2285,6 +2285,146 @@ def list_strategies() -> None:
     typer.echo("Example: nordinvest analyze --group us_tech_software --strategy momentum\n")
 
 
+@app.command()
+def watchlist(
+    add_ticker: str = typer.Option(
+        None,
+        "--add-ticker",
+        "-a",
+        help="Add ticker to watchlist (e.g., AAPL)",
+    ),
+    add_recommendation: int = typer.Option(
+        None,
+        "--add-recommendation",
+        "-r",
+        help="Add ticker by recommendation ID",
+    ),
+    remove: str = typer.Option(
+        None,
+        "--remove",
+        "-d",
+        help="Remove ticker from watchlist",
+    ),
+    list_all: bool = typer.Option(
+        False,
+        "--list",
+        "-l",
+        help="List all tickers in watchlist",
+    ),
+    config: Path = typer.Option(  # noqa: B008
+        None,
+        "--config",
+        "-c",
+        help="Path to configuration file",
+        exists=True,
+    ),
+) -> None:
+    """Manage watchlist of tickers to monitor.
+
+    Add tickers to watchlist either by ticker symbol or recommendation ID.
+    Each ticker can only appear once in the watchlist.
+
+    Examples:
+        # Add ticker to watchlist
+        watchlist --add-ticker AAPL
+
+        # Add ticker by recommendation ID (uses first recommendation for that ticker)
+        watchlist --add-recommendation 123
+
+        # Remove ticker from watchlist
+        watchlist --remove AAPL
+
+        # List all watchlist tickers
+        watchlist --list
+    """
+    try:
+        # Load config
+        config_obj = load_config(config)
+
+        # Initialize database
+        db_path = (
+            config_obj.database.db_path if config_obj.database.enabled else "data/nordinvest.db"
+        )
+        init_db(db_path)
+
+        # Create repository
+        from src.data.repository import WatchlistRepository
+
+        watchlist_repo = WatchlistRepository(db_path)
+
+        # Handle operations
+        if add_ticker:
+            success, message = watchlist_repo.add_to_watchlist(add_ticker)
+            if success:
+                typer.echo(f"✅ {message}")
+            else:
+                typer.echo(f"❌ {message}", err=True)
+                raise typer.Exit(code=1)
+
+        elif add_recommendation:
+            # Get recommendation and extract ticker
+            from src.data.repository import RecommendationsRepository
+
+            rec_repo = RecommendationsRepository(db_path)
+            rec = rec_repo.get_recommendation_by_id(add_recommendation)
+
+            if not rec:
+                typer.echo(f"❌ Recommendation {add_recommendation} not found", err=True)
+                raise typer.Exit(code=1)
+
+            ticker_symbol = rec.get("ticker")
+            success, message = watchlist_repo.add_to_watchlist(
+                ticker_symbol, recommendation_id=add_recommendation
+            )
+
+            if success:
+                typer.echo(f"✅ {message}")
+            else:
+                typer.echo(f"❌ {message}", err=True)
+                raise typer.Exit(code=1)
+
+        elif remove:
+            success, message = watchlist_repo.remove_from_watchlist(remove)
+            if success:
+                typer.echo(f"✅ {message}")
+            else:
+                typer.echo(f"❌ {message}", err=True)
+                raise typer.Exit(code=1)
+
+        elif list_all:
+            watchlist_items = watchlist_repo.get_watchlist()
+
+            if not watchlist_items:
+                typer.echo("📝 Watchlist is empty")
+                return
+
+            typer.echo("\n📝 Watchlist\n")
+            typer.echo("=" * 80)
+
+            for item in watchlist_items:
+                ticker = item["ticker"]
+                name = item["name"]
+                rec_id = item["recommendation_id"]
+                created = item["created_at"].strftime("%Y-%m-%d %H:%M")
+
+                rec_info = f" (recommendation #{rec_id})" if rec_id else ""
+                typer.echo(f"\n{ticker} - {name}{rec_info}")
+                typer.echo(f"   Added: {created}")
+
+            typer.echo(f"\n\nTotal: {len(watchlist_items)} ticker(s)\n")
+
+        else:
+            typer.echo(
+                "❌ Please specify an action: --add-ticker, --add-recommendation, --remove, or --list"
+            )
+            raise typer.Exit(code=1)
+
+    except Exception as e:
+        logger.error(f"Watchlist command error: {e}", exc_info=True)
+        typer.echo(f"❌ Error: {e}", err=True)
+        raise typer.Exit(code=1) from e
+
+
 @app.callback()
 def version_callback(
     version: bool = typer.Option(None, "--version", "-v", help="Show version and exit"),
