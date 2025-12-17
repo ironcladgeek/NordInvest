@@ -1693,6 +1693,7 @@ class WatchlistRepository:
         Args:
             ticker_symbol: Ticker symbol to add.
             recommendation_id: Optional recommendation ID to associate.
+                If not provided, will use the first recommendation for the ticker.
 
         Returns:
             Tuple of (success, message).
@@ -1715,6 +1716,16 @@ class WatchlistRepository:
 
                 if existing:
                     return False, f"{ticker_symbol} is already in watchlist"
+
+                # If no recommendation_id provided, fetch first recommendation for this ticker
+                if recommendation_id is None:
+                    first_rec = session.exec(
+                        select(Recommendation)
+                        .where(Recommendation.ticker_id == ticker.id)
+                        .order_by(Recommendation.analysis_date)
+                    ).first()
+                    if first_rec:
+                        recommendation_id = first_rec.id
 
                 # Create watchlist entry
                 watchlist_entry = Watchlist(
