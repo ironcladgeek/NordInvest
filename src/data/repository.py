@@ -23,6 +23,7 @@ from src.data.models import (
     Recommendation,
     RunSession,
     Ticker,
+    Watchlist,
 )
 
 
@@ -1698,8 +1699,6 @@ class WatchlistRepository:
         Returns:
             Tuple of (success, message).
         """
-        from src.data.models import Watchlist
-
         try:
             session = self.db_manager.get_session()
 
@@ -1752,8 +1751,6 @@ class WatchlistRepository:
         Returns:
             Tuple of (success, message).
         """
-        from src.data.models import Watchlist
-
         try:
             session = self.db_manager.get_session()
 
@@ -1792,8 +1789,6 @@ class WatchlistRepository:
         Returns:
             List of dictionaries with ticker info.
         """
-        from src.data.models import Watchlist
-
         try:
             session = self.db_manager.get_session()
 
@@ -1830,8 +1825,6 @@ class WatchlistRepository:
         Returns:
             True if ticker is in watchlist.
         """
-        from src.data.models import Watchlist
-
         try:
             session = self.db_manager.get_session()
 
