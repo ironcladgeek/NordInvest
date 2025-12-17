@@ -493,3 +493,36 @@ class Watchlist(SQLModel, table=True):
     )
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class WatchlistSignal(SQLModel, table=True):
+    """Technical analysis signals for watchlist tickers.
+
+    Stores periodic technical analysis results for tickers in the watchlist
+    to help identify optimal entry points for opening positions.
+    """
+
+    __tablename__ = "watchlist_signals"
+
+    id: int | None = SQLField(default=None, primary_key=True, description="Auto-incrementing ID")
+    ticker_id: int = SQLField(
+        foreign_key="tickers.id", index=True, description="Foreign key to ticker"
+    )
+    watchlist_id: int = SQLField(
+        foreign_key="watchlist.id", index=True, description="Foreign key to watchlist entry"
+    )
+    analysis_date: date = SQLField(
+        index=True, description="Date when technical analysis was performed"
+    )
+    score: float = SQLField(description="Technical analysis score (0-100)")
+    confidence: float = SQLField(description="Confidence level in the analysis (0-100)")
+    current_price: float = SQLField(description="Stock price at time of analysis")
+    currency: str = SQLField(default="USD", description="Price currency")
+    rationale: str | None = SQLField(
+        default=None, description="Explanation of the technical analysis and signal"
+    )
+    created_at: datetime = SQLField(
+        default_factory=datetime.now, description="When signal was created"
+    )
+
+    model_config = ConfigDict(from_attributes=True)
