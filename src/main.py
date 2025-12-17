@@ -2299,9 +2299,9 @@ def watchlist(
         "-r",
         help="Add ticker by recommendation ID",
     ),
-    remove: str = typer.Option(
+    remove_ticker: str = typer.Option(
         None,
-        "--remove",
+        "--remove-ticker",
         "-d",
         help="Remove ticker from watchlist",
     ),
@@ -2332,7 +2332,7 @@ def watchlist(
         watchlist --add-recommendation 123
 
         # Remove ticker from watchlist
-        watchlist --remove AAPL
+        watchlist --remove-ticker AAPL
 
         # List all watchlist tickers
         watchlist --list
@@ -2383,8 +2383,8 @@ def watchlist(
                 typer.echo(f"❌ {message}", err=True)
                 raise typer.Exit(code=1)
 
-        elif remove:
-            success, message = watchlist_repo.remove_from_watchlist(remove)
+        elif remove_ticker:
+            success, message = watchlist_repo.remove_from_watchlist(remove_ticker)
             if success:
                 typer.echo(f"✅ {message}")
             else:
@@ -2415,7 +2415,7 @@ def watchlist(
 
         else:
             typer.echo(
-                "❌ Please specify an action: --add-ticker, --add-recommendation, --remove, or --list"
+                "❌ Please specify an action: --add-ticker, --add-recommendation, --remove-ticker, or --list"
             )
             raise typer.Exit(code=1)
 
