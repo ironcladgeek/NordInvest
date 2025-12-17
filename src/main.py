@@ -8,6 +8,8 @@ from datetime import date, datetime
 from pathlib import Path
 
 import typer
+from rich.console import Console
+from rich.table import Table
 
 from src.analysis import InvestmentSignal
 from src.analysis.signal_creator import SignalCreator
@@ -2398,20 +2400,26 @@ def watchlist(
                 typer.echo("📝 Watchlist is empty")
                 return
 
-            typer.echo("\n📝 Watchlist\n")
-            typer.echo("=" * 80)
+            # Create rich table
+            table = Table(title="📝 Watchlist", show_header=True, header_style="bold cyan")
+            table.add_column("Ticker", style="green", width=8)
+            table.add_column("Company Name", style="white", width=40)
+            table.add_column("Rec ID", justify="right", style="yellow", width=8)
+            table.add_column("Added", style="blue", width=16)
 
+            # Add rows
             for item in watchlist_items:
                 ticker = item["ticker"]
                 name = item["name"]
-                rec_id = item["recommendation_id"]
+                rec_id = str(item["recommendation_id"]) if item["recommendation_id"] else "-"
                 created = item["created_at"].strftime("%Y-%m-%d %H:%M")
 
-                rec_info = f" (recommendation #{rec_id})" if rec_id else ""
-                typer.echo(f"\n{ticker} - {name}{rec_info}")
-                typer.echo(f"   Added: {created}")
+                table.add_row(ticker, name, rec_id, created)
 
-            typer.echo(f"\n\nTotal: {len(watchlist_items)} ticker(s)\n")
+            # Print table
+            console = Console()
+            console.print(table)
+            console.print(f"\nTotal: {len(watchlist_items)} ticker(s)\n", style="bold")
 
         else:
             typer.echo(
