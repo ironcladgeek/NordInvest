@@ -1097,6 +1097,48 @@ class RecommendationsRepository:
             logger.error(f"Error retrieving recommendations for ticker {ticker}: {e}")
             return []
 
+    def get_recommendation_by_id(self, recommendation_id: int) -> dict | None:
+        """Get a single recommendation by ID.
+
+        Args:
+            recommendation_id: Recommendation ID.
+
+        Returns:
+            Dictionary with recommendation details or None if not found.
+        """
+        try:
+            session = self.db_manager.get_session()
+            try:
+                recommendation = session.exec(
+                    select(Recommendation, Ticker)
+                    .join(Ticker, Recommendation.ticker_id == Ticker.id)
+                    .where(Recommendation.id == recommendation_id)
+                ).first()
+
+                if not recommendation:
+                    return None
+
+                rec, ticker = recommendation
+
+                return {
+                    "id": rec.id,
+                    "ticker": ticker.symbol,
+                    "name": ticker.name,
+                    "recommendation": rec.signal_type,
+                    "confidence": rec.confidence,
+                    "current_price": rec.current_price,
+                    "analysis_date": rec.analysis_date.isoformat() if rec.analysis_date else None,
+                    "analysis_mode": rec.analysis_mode,
+                    "reasoning": rec.rationale,
+                }
+
+            finally:
+                session.close()
+
+        except Exception as e:
+            logger.error(f"Error retrieving recommendation {recommendation_id}: {e}")
+            return None
+
     def get_recent_analysis_dates(self, limit: int = 10) -> list[dict]:
         """Get recent analysis dates with signal counts.
 
@@ -1626,3 +1668,179 @@ class PerformanceRepository:
         except Exception as e:
             logger.error(f"Error generating performance report: {e}")
             return {}
+
+
+class WatchlistRepository:
+    """Repository for managing watchlist operations.
+
+    Handles adding, removing, and querying tickers in the watchlist.
+    """
+
+    def __init__(self, db_path: Path | str = "data/nordinvest.db"):
+        """Initialize repository with database manager.
+
+        Args:
+            db_path: Path to SQLite database file.
+        """
+        self.db_manager = DatabaseManager(db_path)
+        self.db_manager.initialize()
+
+    def add_to_watchlist(
+        self, ticker_symbol: str, recommendation_id: int | None = None
+    ) -> tuple[bool, str]:
+        """Add ticker to watchlist.
+
+        Args:
+            ticker_symbol: Ticker symbol to add.
+            recommendation_id: Optional recommendation ID to associate.
+
+        Returns:
+            Tuple of (success, message).
+        """
+        from src.data.models import Watchlist
+
+        try:
+            session = self.db_manager.get_session()
+
+            try:
+                ticker_symbol = ticker_symbol.upper()
+
+                # Get or create ticker
+                ticker = get_or_create_ticker(session, ticker_symbol)
+
+                # Check if ticker already in watchlist
+                existing = session.exec(
+                    select(Watchlist).where(Watchlist.ticker_id == ticker.id)
+                ).first()
+
+                if existing:
+                    return False, f"{ticker_symbol} is already in watchlist"
+
+                # Create watchlist entry
+                watchlist_entry = Watchlist(
+                    ticker_id=ticker.id, recommendation_id=recommendation_id
+                )
+                session.add(watchlist_entry)
+                session.commit()
+
+                return True, f"Added {ticker_symbol} to watchlist"
+
+            finally:
+                session.close()
+
+        except Exception as e:
+            logger.error(f"Error adding {ticker_symbol} to watchlist: {e}")
+            return False, f"Error: {str(e)}"
+
+    def remove_from_watchlist(self, ticker_symbol: str) -> tuple[bool, str]:
+        """Remove ticker from watchlist.
+
+        Args:
+            ticker_symbol: Ticker symbol to remove.
+
+        Returns:
+            Tuple of (success, message).
+        """
+        from src.data.models import Watchlist
+
+        try:
+            session = self.db_manager.get_session()
+
+            try:
+                ticker_symbol = ticker_symbol.upper()
+
+                # Find ticker
+                ticker = session.exec(select(Ticker).where(Ticker.symbol == ticker_symbol)).first()
+
+                if not ticker:
+                    return False, f"Ticker {ticker_symbol} not found"
+
+                # Find and delete watchlist entry
+                watchlist_entry = session.exec(
+                    select(Watchlist).where(Watchlist.ticker_id == ticker.id)
+                ).first()
+
+                if not watchlist_entry:
+                    return False, f"{ticker_symbol} is not in watchlist"
+
+                session.delete(watchlist_entry)
+                session.commit()
+
+                return True, f"Removed {ticker_symbol} from watchlist"
+
+            finally:
+                session.close()
+
+        except Exception as e:
+            logger.error(f"Error removing {ticker_symbol} from watchlist: {e}")
+            return False, f"Error: {str(e)}"
+
+    def get_watchlist(self) -> list[dict]:
+        """Get all tickers in watchlist.
+
+        Returns:
+            List of dictionaries with ticker info.
+        """
+        from src.data.models import Watchlist
+
+        try:
+            session = self.db_manager.get_session()
+
+            try:
+                statement = select(Watchlist, Ticker).join(Ticker).order_by(Watchlist.created_at)
+                results = session.exec(statement).all()
+
+                watchlist = []
+                for watchlist_entry, ticker in results:
+                    watchlist.append(
+                        {
+                            "ticker": ticker.symbol,
+                            "name": ticker.name,
+                            "recommendation_id": watchlist_entry.recommendation_id,
+                            "created_at": watchlist_entry.created_at,
+                        }
+                    )
+
+                return watchlist
+
+            finally:
+                session.close()
+
+        except Exception as e:
+            logger.error(f"Error getting watchlist: {e}")
+            return []
+
+    def ticker_exists(self, ticker_symbol: str) -> bool:
+        """Check if ticker exists in watchlist.
+
+        Args:
+            ticker_symbol: Ticker symbol to check.
+
+        Returns:
+            True if ticker is in watchlist.
+        """
+        from src.data.models import Watchlist
+
+        try:
+            session = self.db_manager.get_session()
+
+            try:
+                ticker_symbol = ticker_symbol.upper()
+
+                ticker = session.exec(select(Ticker).where(Ticker.symbol == ticker_symbol)).first()
+
+                if not ticker:
+                    return False
+
+                existing = session.exec(
+                    select(Watchlist).where(Watchlist.ticker_id == ticker.id)
+                ).first()
+
+                return existing is not None
+
+            finally:
+                session.close()
+
+        except Exception as e:
+            logger.error(f"Error checking watchlist for {ticker_symbol}: {e}")
+            return False
