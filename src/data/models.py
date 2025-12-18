@@ -521,6 +521,7 @@ class WatchlistSignal(SQLModel, table=True):
     rationale: str | None = SQLField(
         default=None, description="Explanation of the technical analysis and signal"
     )
+    action: str | None = SQLField(default=None, description="Suggested action: Buy, Wait, Remove")
     created_at: datetime = SQLField(
         default_factory=datetime.now, description="When signal was created"
     )
