@@ -1875,6 +1875,7 @@ class WatchlistSignalRepository:
         confidence: float,
         current_price: float,
         rationale: str | None = None,
+        action: str | None = None,
         currency: str = "USD",
     ) -> tuple[bool, str]:
         """Store technical analysis signal for a watchlist ticker.
@@ -1886,6 +1887,7 @@ class WatchlistSignalRepository:
             confidence: Confidence level (0-100).
             current_price: Stock price at time of analysis.
             rationale: Explanation of the technical analysis.
+            action: Suggested action (Buy, Wait, Remove).
             currency: Price currency (default: USD).
 
         Returns:
@@ -1925,6 +1927,7 @@ class WatchlistSignalRepository:
                     existing.current_price = current_price
                     existing.currency = currency
                     existing.rationale = rationale
+                    existing.action = action
                     existing.watchlist_id = watchlist_entry.id  # Update in case it changed
                     session.add(existing)
                     message = f"Updated signal for {ticker_symbol} on {analysis_date}"
@@ -1939,6 +1942,7 @@ class WatchlistSignalRepository:
                         current_price=current_price,
                         currency=currency,
                         rationale=rationale,
+                        action=action,
                     )
                     session.add(signal)
                     message = f"Stored signal for {ticker_symbol} on {analysis_date}"
@@ -2121,6 +2125,7 @@ class WatchlistSignalRepository:
                             "currency": signal.currency,
                             "analysis_date": signal.analysis_date,
                             "rationale": signal.rationale,
+                            "action": signal.action,
                         }
                     )
 
