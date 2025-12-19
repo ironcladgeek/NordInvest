@@ -7,15 +7,17 @@ from pathlib import Path
 import pytest
 
 from src.analysis import (
-    AnalystInfo,
     ComponentScores,
-    FundamentalMetrics,
     InvestmentSignal,
     Recommendation,
     RiskAssessment,
     RiskLevel,
+)
+from src.analysis.models import (
+    AnalysisMetadata,
+    AnalystInfo,
+    FundamentalMetrics,
     SentimentInfo,
-    SignalMetadata,
     TechnicalIndicators,
 )
 from src.config import load_config
@@ -30,7 +32,7 @@ def create_detailed_signal(
     """Helper to create signal with complete metadata for testing."""
     metadata = None
     if with_metadata:
-        metadata = SignalMetadata(
+        metadata = AnalysisMetadata(
             technical_indicators=TechnicalIndicators(
                 rsi=65.5,
                 macd=2.5,
