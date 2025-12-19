@@ -100,7 +100,7 @@ def create_detailed_signal(
             "Bullish technical indicators",
         ],
         risk=RiskAssessment(
-            level=RiskLevel.MODERATE,
+            level=RiskLevel.MEDIUM,
             volatility="normal",
             volatility_pct=3.2,
             liquidity="highly_liquid",
