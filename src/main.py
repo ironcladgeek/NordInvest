@@ -3215,10 +3215,11 @@ def journal(
                 table.add_column("ID", style="dim", width=6)
                 table.add_column("Ticker", style="green", width=8)
                 table.add_column("Type", width=6)
+                table.add_column("Currency", width=8)
                 table.add_column("Entry Date", width=12)
-                table.add_column("Entry", justify="right", width=12)
+                table.add_column("Entry", justify="right", width=10)
                 table.add_column("Exit Date", width=12)
-                table.add_column("Exit", justify="right", width=12)
+                table.add_column("Exit", justify="right", width=10)
                 table.add_column("Size", justify="right", width=8)
                 table.add_column("Status", width=8)
                 table.add_column("P&L", justify="right", width=12)
@@ -3227,14 +3228,12 @@ def journal(
                 for trade in trades:
                     currency = trade.get("currency", "USD")
 
-                    # Format entry price with currency
-                    entry_str = f"{currency} {trade['entry_price']:.2f}"
+                    # Format entry price without currency
+                    entry_str = f"{trade['entry_price']:.2f}"
 
-                    # Format exit price with currency (if closed)
+                    # Format exit price without currency (if closed)
                     exit_str = (
-                        f"{currency} {trade['exit_price']:.2f}"
-                        if trade["exit_price"] is not None
-                        else "-"
+                        f"{trade['exit_price']:.2f}" if trade["exit_price"] is not None else "-"
                     )
 
                     # Format exit date (if closed)
@@ -3258,6 +3257,7 @@ def journal(
                         str(trade["id"]),
                         trade["ticker_symbol"],
                         trade["position_type"],
+                        currency,
                         str(trade["entry_date"]),
                         entry_str,
                         exit_date_str,
