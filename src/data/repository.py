@@ -2569,6 +2569,42 @@ class TradingJournalRepository:
             logger.error(f"Failed to get closed trades: {e}")
             return []
 
+    def get_all_trades(self, ticker_symbol: str | None = None) -> list[dict]:
+        """Get all trades (both open and closed).
+
+        Args:
+            ticker_symbol: Optional filter by ticker symbol.
+
+        Returns:
+            List of trade dictionaries ordered by ID ascending.
+        """
+        try:
+            session = self.db_manager.get_session()
+            try:
+                query = select(TradingJournal, Ticker).join(
+                    Ticker, TradingJournal.ticker_id == Ticker.id
+                )
+
+                if ticker_symbol:
+                    ticker_symbol = ticker_symbol.upper()
+                    query = query.where(Ticker.symbol == ticker_symbol)
+
+                query = query.order_by(TradingJournal.id.asc())
+                results = session.exec(query).all()
+
+                trades = []
+                for trade, ticker in results:
+                    trades.append(self._trade_to_dict(trade, ticker))
+
+                return trades
+
+            finally:
+                session.close()
+
+        except Exception as e:
+            logger.error(f"Failed to get all trades: {e}")
+            return []
+
     def get_trade_by_id(self, trade_id: int) -> dict | None:
         """Get trade by ID.
 
