@@ -3040,6 +3040,15 @@ def journal(
             description = typer.prompt("Description (optional, press Enter to skip)", default="")
             description = description if description else None
 
+            # Get recommendation ID (optional)
+            recommendation_id_str = typer.prompt(
+                "Recommendation ID (optional, press Enter to skip)", default=""
+            )
+            recommendation_id = int(recommendation_id_str) if recommendation_id_str else None
+
+            # Get currency (optional)
+            currency = typer.prompt("Currency", default="USD").strip().upper()
+
             # Create trade
             success, message, trade_id = journal_repo.create_trade(
                 ticker_symbol=ticker,
@@ -3051,6 +3060,8 @@ def journal(
                 stop_loss=stop_loss,
                 take_profit=take_profit,
                 description=description,
+                recommendation_id=recommendation_id,
+                currency=currency,
             )
 
             if success:
