@@ -3407,15 +3407,55 @@ def journal(
             unrealized_pl_pct_list = []
             open_positions_with_prices = []
 
+            # Cache for exchange rates to avoid multiple API calls for same currency
+            exchange_rates = {}
+
+            def get_exchange_rate(from_currency: str, to_currency: str = "USD") -> float:
+                """Get exchange rate from one currency to another using Yahoo Finance.
+
+                Args:
+                    from_currency: Source currency code (e.g., 'SEK', 'EUR')
+                    to_currency: Target currency code (default: 'USD')
+
+                Returns:
+                    Exchange rate (1 from_currency = X to_currency)
+                """
+                if from_currency == to_currency:
+                    return 1.0
+
+                cache_key = f"{from_currency}{to_currency}"
+                if cache_key in exchange_rates:
+                    return exchange_rates[cache_key]
+
+                try:
+                    # Yahoo Finance uses format like "SEKUSD=X" for SEK to USD
+                    ticker_symbol = f"{from_currency}{to_currency}=X"
+                    price_obj = provider_manager.get_latest_price(ticker_symbol)
+                    if price_obj and price_obj.close_price:
+                        rate = price_obj.close_price
+                        exchange_rates[cache_key] = rate
+                        return rate
+                    else:
+                        typer.echo(
+                            f"  ⚠️  Could not fetch exchange rate for {from_currency} to {to_currency}, using 1.0"
+                        )
+                        return 1.0
+                except Exception as e:
+                    typer.echo(
+                        f"  ⚠️  Error fetching exchange rate {from_currency}/{to_currency}: {e}"
+                    )
+                    return 1.0
+
             for trade in open_trades:
                 ticker = trade["ticker_symbol"]
+                trade_currency = trade.get("currency", "USD")
                 try:
                     # Fetch latest price using get_latest_price method
                     price_obj = provider_manager.get_latest_price(ticker)
                     if price_obj and price_obj.close_price:
                         current_price = price_obj.close_price
 
-                        # Calculate unrealized P&L
+                        # Calculate unrealized P&L in the trade's native currency
                         entry_amount = trade["total_entry_amount"]
                         position_size = trade["position_size"]
                         position_type = trade["position_type"]
@@ -3435,14 +3475,20 @@ def journal(
 
                         trade_pl_pct = (trade_pl / entry_amount) * 100 if entry_amount > 0 else 0
 
-                        unrealized_pl += trade_pl
+                        # Convert to USD for totals
+                        exchange_rate = get_exchange_rate(trade_currency, "USD")
+                        trade_pl_usd = trade_pl * exchange_rate
+
+                        unrealized_pl += trade_pl_usd
                         unrealized_pl_pct_list.append(trade_pl_pct)
                         open_positions_with_prices.append(
                             {
                                 **trade,
                                 "current_price": current_price,
                                 "unrealized_pl": trade_pl,
+                                "unrealized_pl_usd": trade_pl_usd,
                                 "unrealized_pl_pct": trade_pl_pct,
+                                "exchange_rate": exchange_rate,
                             }
                         )
                     else:
@@ -3525,35 +3571,55 @@ def journal(
             typer.echo(f"  Total open positions: {len(open_positions_with_prices)}")
             if open_positions_with_prices:
                 unrealized_color = "green" if unrealized_pl > 0 else "red"
-                typer.echo("  Total unrealized P&L: ", nl=False)
+                typer.echo("  Total unrealized P&L (USD): ", nl=False)
                 typer.secho(f"${unrealized_pl:,.2f}", fg=unrealized_color)
                 avg_unrealized = unrealized_pl / len(open_positions_with_prices)
-                typer.echo(f"  Average unrealized P&L per position: ${avg_unrealized:,.2f}")
+                typer.echo(f"  Average unrealized P&L per position (USD): ${avg_unrealized:,.2f}")
                 typer.echo(f"  Average unrealized return: {avg_unrealized_pl_pct:.2f}%")
 
                 # Show top 3 best and worst performing open positions
                 sorted_open = sorted(
-                    open_positions_with_prices, key=lambda x: x["unrealized_pl"], reverse=True
+                    open_positions_with_prices, key=lambda x: x["unrealized_pl_usd"], reverse=True
                 )
 
                 typer.echo("\n  📈 Top performing open positions:")
                 for i, pos in enumerate(sorted_open[:3], 1):
                     pl_color = "green" if pos["unrealized_pl"] > 0 else "red"
+                    currency = pos.get("currency", "USD")
                     typer.echo(f"    {i}. {pos['ticker_symbol']}: ", nl=False)
-                    typer.secho(
-                        f"${pos['unrealized_pl']:,.2f} ({pos['unrealized_pl_pct']:.2f}%)",
-                        fg=pl_color,
-                    )
+                    # Show native currency first, then USD equivalent if different
+                    if currency != "USD":
+                        typer.secho(
+                            f"{currency} {pos['unrealized_pl']:,.2f} "
+                            f"(${pos['unrealized_pl_usd']:,.2f} USD) "
+                            f"{pos['unrealized_pl_pct']:.2f}%",
+                            fg=pl_color,
+                        )
+                    else:
+                        typer.secho(
+                            f"${pos['unrealized_pl']:,.2f} ({pos['unrealized_pl_pct']:.2f}%)",
+                            fg=pl_color,
+                        )
 
                 if len(sorted_open) > 3:
                     typer.echo("\n  📉 Worst performing open positions:")
                     for i, pos in enumerate(sorted_open[-3:][::-1], 1):
                         pl_color = "green" if pos["unrealized_pl"] > 0 else "red"
+                        currency = pos.get("currency", "USD")
                         typer.echo(f"    {i}. {pos['ticker_symbol']}: ", nl=False)
-                        typer.secho(
-                            f"${pos['unrealized_pl']:,.2f} ({pos['unrealized_pl_pct']:.2f}%)",
-                            fg=pl_color,
-                        )
+                        # Show native currency first, then USD equivalent if different
+                        if currency != "USD":
+                            typer.secho(
+                                f"{currency} {pos['unrealized_pl']:,.2f} "
+                                f"(${pos['unrealized_pl_usd']:,.2f} USD) "
+                                f"{pos['unrealized_pl_pct']:.2f}%",
+                                fg=pl_color,
+                            )
+                        else:
+                            typer.secho(
+                                f"${pos['unrealized_pl']:,.2f} ({pos['unrealized_pl_pct']:.2f}%)",
+                                fg=pl_color,
+                            )
 
             # Overall Performance
             total_pl = realized_pl + unrealized_pl
