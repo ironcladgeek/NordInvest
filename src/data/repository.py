@@ -2502,7 +2502,7 @@ class TradingJournalRepository:
                     ticker_symbol = ticker_symbol.upper()
                     query = query.where(Ticker.symbol == ticker_symbol)
 
-                query = query.order_by(TradingJournal.entry_date.desc())
+                query = query.order_by(TradingJournal.id.asc())
                 results = session.exec(query).all()
 
                 trades = []
@@ -2553,7 +2553,7 @@ class TradingJournalRepository:
                 if end_date:
                     query = query.where(TradingJournal.exit_date <= end_date)
 
-                query = query.order_by(TradingJournal.exit_date.desc())
+                query = query.order_by(TradingJournal.id.asc())
                 results = session.exec(query).all()
 
                 trades = []
