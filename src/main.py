@@ -3011,9 +3011,11 @@ def journal(
                 raise typer.Exit(code=1) from None
 
             # Get position type
-            position_type = typer.prompt(
-                "Position type", type=typer.Choice(["long", "short"], case_sensitive=False)
-            ).lower()
+            while True:
+                position_type = typer.prompt("Position type (long/short)").strip().lower()
+                if position_type in ["long", "short"]:
+                    break
+                typer.echo("❌ Invalid position type. Please enter 'long' or 'short'.")
 
             # Get entry price
             entry_price = typer.prompt("Entry price", type=float)
@@ -3172,10 +3174,13 @@ def journal(
             typer.echo("\n📋 List Trades\n")
 
             # Prompt for filter type
-            list_type = typer.prompt(
-                "List type",
-                type=typer.Choice(["open", "closed", "ticker", "all"], case_sensitive=False),
-            ).lower()
+            while True:
+                list_type = typer.prompt("List type (open/closed/ticker/all)").strip().lower()
+                if list_type in ["open", "closed", "ticker", "all"]:
+                    break
+                typer.echo(
+                    "❌ Invalid list type. Please enter 'open', 'closed', 'ticker', or 'all'."
+                )
 
             if list_type == "open":
                 trades = journal_repo.get_open_trades()
