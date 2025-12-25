@@ -92,7 +92,8 @@ class AnalystRating(BaseModel):
     num_analysts: int | None = Field(default=None, ge=1, description="Number of analysts")
     consensus: str | None = Field(default=None, description="Consensus rating from aggregates")
 
-    # Raw recommendation counts (optional, for providers like Finnhub that provide detailed breakdowns)
+    # Raw recommendation counts (optional, for providers like Finnhub
+    # that provide detailed breakdowns)
     strong_buy: int | None = Field(default=None, ge=0, description="Number of strong buy ratings")
     buy: int | None = Field(default=None, ge=0, description="Number of buy ratings")
     hold: int | None = Field(default=None, ge=0, description="Number of hold ratings")
@@ -358,7 +359,10 @@ class Recommendation(SQLModel, table=True):
     # Enhanced metadata (JSON serialized AnalysisMetadata)
     metadata_json: str | None = SQLField(
         default=None,
-        description="JSON-serialized AnalysisMetadata (technical indicators, fundamental metrics, analyst info, sentiment info)",
+        description=(
+            "JSON-serialized AnalysisMetadata "
+            "(technical indicators, fundamental metrics, analyst info, sentiment info)"
+        ),
     )
 
     created_at: datetime = SQLField(
@@ -537,5 +541,80 @@ class WatchlistSignal(SQLModel, table=True):
     created_at: datetime = SQLField(
         default_factory=datetime.now, description="When signal was created"
     )
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TradingJournal(SQLModel, table=True):
+    """Trading journal for tracking open and closed positions.
+
+    Records all trade entries and exits with P&L tracking. Supports both
+    long and short positions with detailed fee tracking and performance metrics.
+    """
+
+    __tablename__ = "trading_journal"
+
+    id: int | None = SQLField(default=None, primary_key=True, description="Auto-incrementing ID")
+    ticker_id: int = SQLField(
+        foreign_key="tickers.id", index=True, description="Foreign key to ticker"
+    )
+    recommendation_id: int | None = SQLField(
+        foreign_key="recommendations.id",
+        default=None,
+        index=True,
+        description="Optional foreign key to recommendation that triggered the trade",
+    )
+
+    # Entry details
+    entry_date: date = SQLField(index=True, description="Date when position was opened")
+    entry_price: float = SQLField(ge=0, description="Price per share/unit at entry")
+    position_size: float = SQLField(ge=0, description="Number of shares/units")
+    position_type: str = SQLField(default="long", description="Position type: 'long' or 'short'")
+    fees_entry: float = SQLField(default=0.0, ge=0, description="Fees paid at entry")
+    total_entry_amount: float = SQLField(
+        ge=0, description="Total amount invested: (entry_price * position_size) + fees_entry"
+    )
+
+    # Risk management
+    stop_loss: float | None = SQLField(default=None, ge=0, description="Stop loss price level")
+    take_profit: float | None = SQLField(default=None, ge=0, description="Take profit price level")
+
+    # Exit details (nullable for open positions)
+    exit_date: date | None = SQLField(
+        default=None, index=True, description="Date when position was closed (None for open)"
+    )
+    exit_price: float | None = SQLField(
+        default=None, ge=0, description="Price per share/unit at exit"
+    )
+    fees_exit: float | None = SQLField(default=None, ge=0, description="Fees paid at exit")
+    total_exit_amount: float | None = SQLField(
+        default=None,
+        ge=0,
+        description="Total amount received: (exit_price * position_size) - fees_exit",
+    )
+
+    # Performance metrics (calculated fields)
+    profit_loss: float | None = SQLField(
+        default=None, description="Absolute profit/loss: total_exit_amount - total_entry_amount"
+    )
+    profit_loss_pct: float | None = SQLField(
+        default=None, description="Percentage profit/loss: (profit_loss / total_entry_amount) * 100"
+    )
+
+    # Status and metadata
+    status: str = SQLField(
+        default="open", index=True, description="Trade status: 'open' or 'closed'"
+    )
+    currency: str = SQLField(default="USD", description="Trading currency")
+    description: str | None = SQLField(default=None, description="Notes about the trade")
+    created_at: datetime = SQLField(
+        default_factory=datetime.now, description="When trade record was created"
+    )
+    updated_at: datetime = SQLField(
+        default_factory=datetime.now, description="When trade record was last updated"
+    )
+
+    # Relationships
+    ticker_obj: Ticker = Relationship()
 
     model_config = ConfigDict(from_attributes=True)

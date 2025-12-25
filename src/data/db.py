@@ -53,7 +53,7 @@ class DatabaseManager:
             # Only log once per database path to avoid spam
             db_path_str = str(self.db_path)
             if db_path_str not in _initialized_databases:
-                logger.info(f"Database initialized at {self.db_path}")
+                logger.debug(f"Database initialized at {self.db_path}")
                 _initialized_databases.add(db_path_str)
         except SQLAlchemyError as e:
             logger.error(f"Failed to initialize database: {e}")

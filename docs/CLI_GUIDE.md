@@ -13,6 +13,7 @@ Complete guide to using the FalconSignals command-line interface.
   - [watchlist](#watchlist)
   - [watchlist-scan](#watchlist-scan)
   - [watchlist-report](#watchlist-report)
+  - [journal](#journal)
   - [track-performance](#track-performance)
   - [performance-report](#performance-report)
   - [list-categories](#list-categories)
@@ -552,6 +553,279 @@ For each signal, displays:
 
 ---
 
+### journal
+
+Manage your trading journal with interactive prompts for tracking trades, performance, and P&L.
+
+**Syntax:**
+```bash
+uv run python -m src.main journal [OPTIONS]
+```
+
+#### Options
+
+| Option | Description |
+|--------|-------------|
+| `--action`, `-a` | Action to perform: `add`, `update`, `close`, `list`, `view`, `performance` |
+| `--config`, `-c` | Path to configuration file |
+
+If no action is specified, the command will display an interactive menu.
+
+#### Actions
+
+##### add - Add New Trade
+
+Add a new trade to your journal with interactive prompts.
+
+**Prompts:**
+- Ticker symbol
+- Entry date (default: today)
+- Position type (long/short)
+- Entry price
+- Currency (default: USD)
+- Position size (number of shares)
+- Entry fees (default: 0.0)
+- Stop loss (optional)
+- Take profit (optional)
+- Description (optional)
+- Recommendation ID (optional - link to analysis)
+
+**Example:**
+```bash
+uv run python -m src.main journal --action add
+```
+
+##### update - Update Open Trade
+
+Update stop loss, take profit, or description for an open trade.
+
+**Prompts:**
+- Trade ID
+- New stop loss (optional)
+- New take profit (optional)
+- New description (optional)
+
+**Example:**
+```bash
+uv run python -m src.main journal --action update
+```
+
+##### close - Close Trade
+
+Close an open position and calculate P&L.
+
+**Prompts:**
+- Trade ID
+- Exit date (default: today)
+- Exit price
+- Exit fees (default: 0.0)
+
+**Calculation:**
+- Automatically calculates profit/loss
+- Calculates profit/loss percentage
+- Updates trade status to "closed"
+
+**Example:**
+```bash
+uv run python -m src.main journal --action close
+```
+
+##### list - List Trades
+
+Display trades in a formatted table.
+
+**List Types:**
+- `open` - Show only open positions
+- `closed` - Show only closed positions
+- `ticker` - Show all trades for specific ticker
+- `all` - Show all trades
+
+**Table Columns:**
+- ID, Ticker, Type (long/short)
+- Entry Date, Entry Price
+- Currency
+- Position Size
+- Exit Date, Exit Price (if closed)
+- Status (open/closed)
+- P&L (with currency)
+- P&L % (percentage return)
+
+**Example:**
+```bash
+uv run python -m src.main journal --action list
+```
+
+##### view - View Trade Details
+
+Display comprehensive details for a specific trade.
+
+**Shows:**
+- Position details (type, status)
+- Entry information (date, price, size, fees, total)
+- Risk management (stop loss, take profit)
+- Exit information (if closed)
+- Performance metrics (P&L, P&L %)
+- Notes/description
+- Timestamps (created, updated)
+
+**Example:**
+```bash
+uv run python -m src.main journal --action view
+```
+
+##### performance - Performance Statistics
+
+Calculate and display comprehensive trading performance metrics with multi-currency support.
+
+**Date Range Filtering:**
+- Optional start date (YYYY-MM-DD)
+- Optional end date (YYYY-MM-DD)
+- Press Enter to analyze all trades
+
+**Realized Performance (Closed Trades):**
+- Total closed trades count
+- Winning trades and win rate
+- Losing trades count
+- Total realized P&L
+- Average P&L per trade
+- Average return percentage
+- Average win amount
+- Average loss amount
+- Profit factor (avg win / avg loss)
+
+**Unrealized Performance (Open Trades):**
+- Fetches current prices for all open positions
+- Total unrealized P&L (in USD)
+- Average unrealized P&L per position (in USD)
+- Average unrealized return percentage
+- Top 3 best performing positions
+- Top 3 worst performing positions (if more than 3)
+- Multi-currency display with USD conversion
+
+**Multi-Currency Support:**
+- Each position displayed in native currency
+- USD equivalent shown in parentheses (if different)
+- Exchange rates fetched on-the-fly via Yahoo Finance
+- Totals normalized to USD for comparison
+- Supports SEK, EUR, USD, and other major currencies
+
+**Overall Performance:**
+- Combined P&L (realized + unrealized)
+
+**Example:**
+```bash
+# All-time performance
+uv run python -m src.main journal --action performance
+
+# Performance for specific date range
+uv run python -m src.main journal --action performance
+# Then enter dates when prompted (e.g., 2025-01-01 to 2025-12-31)
+```
+
+**Sample Output:**
+```
+📊 Unrealized Performance (Open Trades):
+  Total open positions: 3
+  Total unrealized P&L (USD): $1,274.87
+  Average unrealized P&L per position (USD): $424.96
+
+  📈 Top performing open positions:
+    1. LUG.ST: SEK 1,040.00 ($94.50 USD) 47.36%
+    2. BITTI.HE: EUR 187.96 ($197.80 USD) 121.39%
+    3. NVDA: $46.91 (34.54%)
+```
+
+#### Complete Examples
+
+```bash
+# Interactive mode (shows menu)
+uv run python -m src.main journal
+
+# Add a new trade
+uv run python -m src.main journal --action add
+
+# Update an existing trade
+uv run python -m src.main journal --action update
+
+# Close a trade and calculate P&L
+uv run python -m src.main journal --action close
+
+# List all open positions
+uv run python -m src.main journal --action list
+# Then choose: open
+
+# List all closed trades
+uv run python -m src.main journal --action list
+# Then choose: closed
+
+# View specific trade details
+uv run python -m src.main journal --action view
+# Then enter trade ID
+
+# View performance statistics
+uv run python -m src.main journal --action performance
+
+# View performance for specific date range
+uv run python -m src.main journal --action performance
+# Then enter start date: 2025-01-01
+# Then enter end date: 2025-12-31
+
+# Use custom config
+uv run python -m src.main journal --action add --config config/local.yaml
+```
+
+#### Journal Features
+
+**Trade Tracking:**
+- Long and short positions
+- Entry and exit dates with prices
+- Position sizing and fees tracking
+- Stop loss and take profit levels
+- Link trades to analysis recommendations
+- Custom notes/descriptions
+
+**P&L Calculation:**
+- Automatic profit/loss calculation on close
+- Percentage returns
+- Includes all fees (entry and exit)
+- Handles long and short positions correctly
+
+**Multi-Currency Support:**
+- Track trades in native currencies (USD, SEK, EUR, etc.)
+- Display positions in their original currency
+- Automatic currency conversion to USD for totals
+- Real-time exchange rates from Yahoo Finance
+- Fair comparison across different markets
+
+**Risk Management:**
+- Track stop loss and take profit levels
+- Update risk parameters for open trades
+- Monitor position sizing
+
+**Performance Analysis:**
+- Win rate and profit factor
+- Average wins vs average losses
+- Unrealized P&L for open positions
+- Date range filtering for period analysis
+- Top/worst performers ranking
+
+**Database Storage:**
+- All trades stored in `trading_journal` table
+- Complete audit trail with timestamps
+- Query by ticker, status, or date
+- Linked to recommendations via optional foreign key
+
+**Notes:**
+- Database must be enabled in configuration
+- All trades stored in `trading_journal` table
+- Supports multiple currencies (defaults to USD)
+- P&L calculated automatically on trade close
+- Performance action fetches real-time prices for open positions
+- Exchange rates cached during performance calculation
+- Can link trades to recommendation IDs for tracking signal performance
+
+---
+
 ### track-performance
 
 Track performance of active recommendations by fetching current prices.
@@ -883,6 +1157,79 @@ uv run python -m src.main watchlist-scan --ticker NVDA,AMD
 
 # 6. Compare multiple tickers
 uv run python -m src.main watchlist-report --ticker AAPL,NVDA,MSFT --days 60
+```
+
+### Trading Journal Workflow
+
+```bash
+# 1. Add a new trade when entering position
+uv run python -m src.main journal --action add
+# Enter: NVDA, today's date, long, $140.50, 10 shares, etc.
+
+# 2. Update stop loss after market moves
+uv run python -m src.main journal --action update
+# Enter trade ID, new stop loss: $135.00
+
+# 3. List open positions to monitor
+uv run python -m src.main journal --action list
+# Choose: open
+
+# 4. Close position when exiting
+uv run python -m src.main journal --action close
+# Enter trade ID, exit date, exit price: $152.30
+
+# 5. View detailed trade information
+uv run python -m src.main journal --action view
+# Enter trade ID to see complete details
+
+# 6. Analyze trading performance
+uv run python -m src.main journal --action performance
+# Review win rate, profit factor, top performers
+
+# 7. Check specific period performance
+uv run python -m src.main journal --action performance
+# Enter start date: 2025-01-01
+# Enter end date: 2025-03-31
+
+# 8. List all closed trades to review history
+uv run python -m src.main journal --action list
+# Choose: closed
+
+# 9. View trades for specific ticker
+uv run python -m src.main journal --action list
+# Choose: ticker
+# Enter: NVDA
+```
+
+### Integrated Trading Workflow
+
+```bash
+# Complete workflow from analysis to journal
+
+# 1. Analyze market and get recommendations
+uv run python -m src.main analyze --market us --limit 50 --llm
+
+# 2. Add promising ticker to watchlist
+uv run python -m src.main watchlist --add-recommendation 123
+
+# 3. Run tactical analysis for entry timing
+uv run python -m src.main watchlist-scan --ticker NVDA
+
+# 4. Review entry price and levels
+uv run python -m src.main watchlist-report --ticker NVDA
+
+# 5. Enter position and log in journal
+uv run python -m src.main journal --action add
+# Include recommendation ID: 123
+
+# 6. Monitor and update as needed
+uv run python -m src.main journal --action update
+
+# 7. Exit and close trade
+uv run python -m src.main journal --action close
+
+# 8. Review performance
+uv run python -m src.main journal --action performance
 ```
 
 ---
