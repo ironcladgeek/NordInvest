@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from src.main import app
+from src.cli import app
 
 
 @pytest.fixture
@@ -103,8 +103,8 @@ def mock_config(temp_db):
 class TestWatchlistCommand:
     """Test suite for the watchlist CLI command."""
 
-    @patch("src.main.load_config")
-    @patch("src.main.init_db")
+    @patch("src.cli.commands.watchlist.load_config")
+    @patch("src.cli.commands.watchlist.init_db")
     def test_watchlist_add_ticker(self, mock_init_db, mock_load_config, runner, mock_config):
         """Test adding a ticker to watchlist."""
         mock_load_config.return_value = mock_config
@@ -136,8 +136,8 @@ class TestWatchlistCommand:
             assert result.exit_code == 0
             assert "Added AAPL to watchlist" in result.stdout or "✅" in result.stdout
 
-    @patch("src.main.load_config")
-    @patch("src.main.init_db")
+    @patch("src.cli.commands.watchlist.load_config")
+    @patch("src.cli.commands.watchlist.init_db")
     def test_watchlist_add_duplicate_ticker(
         self, mock_init_db, mock_load_config, runner, mock_config
     ):
@@ -165,8 +165,8 @@ class TestWatchlistCommand:
             assert result.exit_code == 1
             assert "already in watchlist" in result.output
 
-    @patch("src.main.load_config")
-    @patch("src.main.init_db")
+    @patch("src.cli.commands.watchlist.load_config")
+    @patch("src.cli.commands.watchlist.init_db")
     def test_watchlist_remove_ticker(self, mock_init_db, mock_load_config, runner, mock_config):
         """Test removing a ticker from watchlist."""
         mock_load_config.return_value = mock_config
@@ -192,8 +192,8 @@ class TestWatchlistCommand:
             assert result.exit_code == 0
             assert "Removed AAPL from watchlist" in result.stdout or "✅" in result.stdout
 
-    @patch("src.main.load_config")
-    @patch("src.main.init_db")
+    @patch("src.cli.commands.watchlist.load_config")
+    @patch("src.cli.commands.watchlist.init_db")
     def test_watchlist_remove_nonexistent(
         self, mock_init_db, mock_load_config, runner, mock_config
     ):
@@ -216,8 +216,8 @@ class TestWatchlistCommand:
 
             assert result.exit_code == 1
 
-    @patch("src.main.load_config")
-    @patch("src.main.init_db")
+    @patch("src.cli.commands.watchlist.load_config")
+    @patch("src.cli.commands.watchlist.init_db")
     def test_watchlist_list_empty(self, mock_init_db, mock_load_config, runner, mock_config):
         """Test listing empty watchlist."""
         mock_load_config.return_value = mock_config
@@ -239,8 +239,8 @@ class TestWatchlistCommand:
             assert result.exit_code == 0
             assert "Watchlist is empty" in result.stdout or "empty" in result.stdout.lower()
 
-    @patch("src.main.load_config")
-    @patch("src.main.init_db")
+    @patch("src.cli.commands.watchlist.load_config")
+    @patch("src.cli.commands.watchlist.init_db")
     def test_watchlist_list_with_items(self, mock_init_db, mock_load_config, runner, mock_config):
         """Test listing watchlist with items."""
         mock_load_config.return_value = mock_config
@@ -269,8 +269,8 @@ class TestWatchlistCommand:
             assert "AAPL" in result.stdout
             assert "MSFT" in result.stdout
 
-    @patch("src.main.load_config")
-    @patch("src.main.init_db")
+    @patch("src.cli.commands.watchlist.load_config")
+    @patch("src.cli.commands.watchlist.init_db")
     def test_watchlist_no_action(self, mock_init_db, mock_load_config, runner, mock_config):
         """Test watchlist command with no action specified."""
         mock_load_config.return_value = mock_config
@@ -292,8 +292,8 @@ class TestWatchlistCommand:
             assert result.exit_code == 1
             assert "specify an action" in result.stdout.lower() or "❌" in result.stdout
 
-    @patch("src.main.load_config")
-    @patch("src.main.init_db")
+    @patch("src.cli.commands.watchlist.load_config")
+    @patch("src.cli.commands.watchlist.init_db")
     @patch("src.data.repository.RecommendationsRepository")
     def test_watchlist_add_by_recommendation(
         self,
@@ -333,8 +333,8 @@ class TestWatchlistCommand:
             # Exit code depends on whether recommendation exists
             assert result.exit_code in (0, 1)
 
-    @patch("src.main.load_config")
-    @patch("src.main.init_db")
+    @patch("src.cli.commands.watchlist.load_config")
+    @patch("src.cli.commands.watchlist.init_db")
     def test_watchlist_add_recommendation_not_found(
         self,
         mock_init_db,
@@ -367,9 +367,9 @@ class TestWatchlistCommand:
 class TestWatchlistReportCommand:
     """Test suite for the watchlist-report CLI command."""
 
-    @patch("src.main.load_config")
-    @patch("src.main.setup_logging")
-    @patch("src.main.init_db")
+    @patch("src.cli.commands.watchlist.load_config")
+    @patch("src.cli.commands.watchlist.setup_logging")
+    @patch("src.cli.commands.watchlist.init_db")
     def test_watchlist_report_no_signals(
         self, mock_init_db, mock_setup_logging, mock_load_config, runner, mock_config
     ):
@@ -394,9 +394,9 @@ class TestWatchlistReportCommand:
             # Important check: output indicates no signals found
             assert "No signals found" in result.output or "empty" in result.output.lower()
 
-    @patch("src.main.load_config")
-    @patch("src.main.setup_logging")
-    @patch("src.main.init_db")
+    @patch("src.cli.commands.watchlist.load_config")
+    @patch("src.cli.commands.watchlist.setup_logging")
+    @patch("src.cli.commands.watchlist.init_db")
     def test_watchlist_report_with_ticker_filter(
         self, mock_init_db, mock_setup_logging, mock_load_config, runner, mock_config
     ):
@@ -438,9 +438,9 @@ class TestWatchlistReportCommand:
             # Should show AAPL in output
             assert "AAPL" in result.stdout
 
-    @patch("src.main.load_config")
-    @patch("src.main.setup_logging")
-    @patch("src.main.init_db")
+    @patch("src.cli.commands.watchlist.load_config")
+    @patch("src.cli.commands.watchlist.setup_logging")
+    @patch("src.cli.commands.watchlist.init_db")
     def test_watchlist_report_with_days_option(
         self, mock_init_db, mock_setup_logging, mock_load_config, runner, mock_config
     ):
@@ -464,9 +464,9 @@ class TestWatchlistReportCommand:
             # Command should run (may show "no signals" message)
             assert "Watchlist" in result.output or "No signals" in result.output
 
-    @patch("src.main.load_config")
-    @patch("src.main.setup_logging")
-    @patch("src.main.init_db")
+    @patch("src.cli.commands.watchlist.load_config")
+    @patch("src.cli.commands.watchlist.setup_logging")
+    @patch("src.cli.commands.watchlist.init_db")
     def test_watchlist_report_multiple_tickers(
         self, mock_init_db, mock_setup_logging, mock_load_config, runner, mock_config
     ):
@@ -512,9 +512,9 @@ class TestWatchlistReportCommand:
 class TestWatchlistScanCommand:
     """Test suite for the watchlist-scan CLI command."""
 
-    @patch("src.main.load_config")
-    @patch("src.main.setup_logging")
-    @patch("src.main.init_db")
+    @patch("src.cli.commands.watchlist.load_config")
+    @patch("src.cli.commands.watchlist.setup_logging")
+    @patch("src.cli.commands.watchlist.init_db")
     def test_watchlist_scan_empty_watchlist(
         self, mock_init_db, mock_setup_logging, mock_load_config, runner, mock_config
     ):
@@ -538,11 +538,11 @@ class TestWatchlistScanCommand:
             # Command exits with 0 for empty watchlist (early exit)
             assert "Watchlist is empty" in result.output or "empty" in result.output.lower()
 
-    @patch("src.main.load_config")
-    @patch("src.main.setup_logging")
-    @patch("src.main.init_db")
-    @patch("src.main._download_price_data")
-    @patch("src.main._run_watchlist_scan")
+    @patch("src.cli.commands.watchlist.load_config")
+    @patch("src.cli.commands.watchlist.setup_logging")
+    @patch("src.cli.commands.watchlist.init_db")
+    @patch("src.cli.commands.watchlist.download_price_data")
+    @patch("src.cli.commands.watchlist.run_watchlist_scan")
     def test_watchlist_scan_success(
         self,
         mock_run_scan,
@@ -581,9 +581,9 @@ class TestWatchlistScanCommand:
             # Should call the scan function
             assert mock_run_scan.called or "Scanning" in result.stdout
 
-    @patch("src.main.load_config")
-    @patch("src.main.setup_logging")
-    @patch("src.main.init_db")
+    @patch("src.cli.commands.watchlist.load_config")
+    @patch("src.cli.commands.watchlist.setup_logging")
+    @patch("src.cli.commands.watchlist.init_db")
     def test_watchlist_scan_specific_tickers_not_in_watchlist(
         self, mock_init_db, mock_setup_logging, mock_load_config, runner, mock_config
     ):
@@ -607,11 +607,11 @@ class TestWatchlistScanCommand:
             assert result.exit_code == 1
             assert "not in watchlist" in result.output.lower() or "No valid" in result.output
 
-    @patch("src.main.load_config")
-    @patch("src.main.setup_logging")
-    @patch("src.main.init_db")
-    @patch("src.main._download_price_data")
-    @patch("src.main._run_watchlist_scan")
+    @patch("src.cli.commands.watchlist.load_config")
+    @patch("src.cli.commands.watchlist.setup_logging")
+    @patch("src.cli.commands.watchlist.init_db")
+    @patch("src.cli.commands.watchlist.download_price_data")
+    @patch("src.cli.commands.watchlist.run_watchlist_scan")
     def test_watchlist_scan_specific_valid_tickers(
         self,
         mock_run_scan,
@@ -657,8 +657,8 @@ class TestWatchlistScanCommand:
 class TestWatchlistIntegrationFlow:
     """Integration tests for complete watchlist workflow."""
 
-    @patch("src.main.load_config")
-    @patch("src.main.init_db")
+    @patch("src.cli.commands.watchlist.load_config")
+    @patch("src.cli.commands.watchlist.init_db")
     def test_complete_watchlist_workflow(self, mock_init_db, mock_load_config, runner, mock_config):
         """Test complete watchlist add -> list -> remove workflow."""
         mock_load_config.return_value = mock_config
@@ -698,9 +698,9 @@ class TestWatchlistIntegrationFlow:
             assert "AAPL" not in result5.stdout
             assert "MSFT" in result5.stdout
 
-    @patch("src.main.load_config")
-    @patch("src.main.setup_logging")
-    @patch("src.main.init_db")
+    @patch("src.cli.commands.watchlist.load_config")
+    @patch("src.cli.commands.watchlist.setup_logging")
+    @patch("src.cli.commands.watchlist.init_db")
     def test_watchlist_report_after_signal_storage(
         self, mock_init_db, mock_setup_logging, mock_load_config, runner, mock_config
     ):

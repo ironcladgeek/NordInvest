@@ -8,7 +8,10 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 from typer.testing import CliRunner
 
-from src.main import _download_price_data, _filter_tickers, _run_llm_analysis, app
+from src.cli import app
+from src.cli.helpers.analysis import run_llm_analysis
+from src.cli.helpers.downloads import download_price_data
+from src.cli.helpers.filtering import filter_tickers
 
 
 @pytest.fixture
@@ -112,7 +115,7 @@ class TestCLIAnalyzeCommands:
         # Skip this test due to complex command validation
         pytest.skip("Complex command validation testing")
 
-    @patch("src.main.load_config")
+    @patch("src.cli.commands.analyze.load_config")
     def test_analyze_invalid_market(self, mock_load_config, runner, temp_config):
         """Test analyze command with invalid market."""
         # Skip this test due to complex command validation
@@ -155,11 +158,11 @@ class TestCLIVersionCommand:
 class TestCLIReportCommand:
     """Test CLI report command."""
 
-    @patch("src.main.load_config")
-    @patch("src.main.setup_logging")
-    @patch("src.main.init_db")
+    @patch("src.cli.commands.report.load_config")
+    @patch("src.cli.commands.report.setup_logging")
+    @patch("src.cli.commands.report.init_db")
     @patch("src.data.provider_manager.ProviderManager")  # Mock at source location
-    @patch("src.main.AnalysisPipeline")
+    @patch("src.cli.commands.report.AnalysisPipeline")
     def test_report_command(
         self,
         mock_pipeline_class,
@@ -260,9 +263,9 @@ class TestCLIErrorHandling:
 
 @pytest.mark.unit
 class TestFilterTickers:
-    """Test _filter_tickers helper function."""
+    """Test filter_tickers helper function."""
 
-    @patch("src.main.FilterOrchestrator")
+    @patch("src.cli.helpers.filtering.FilterOrchestrator")
     def test_filter_tickers_success(self, mock_orchestrator_class):
         """Test successful filtering with anomaly strategy."""
         # Setup mocks
@@ -281,7 +284,7 @@ class TestFilterTickers:
         }
 
         # Execute
-        result = _filter_tickers(
+        result = filter_tickers(
             tickers=[
                 "AAPL",
                 "MSFT",
@@ -305,7 +308,7 @@ class TestFilterTickers:
         mock_orchestrator.filter_tickers.assert_called_once()
         mock_typer.echo.assert_called()
 
-    @patch("src.main.FilterOrchestrator")
+    @patch("src.cli.helpers.filtering.FilterOrchestrator")
     def test_filter_tickers_force_full_analysis(self, mock_orchestrator_class):
         """Test that force_full_analysis overrides strategy to 'all'."""
         # Setup mocks
@@ -323,7 +326,7 @@ class TestFilterTickers:
         }
 
         # Execute with force_full_analysis
-        result = _filter_tickers(
+        result = filter_tickers(
             tickers=["AAPL", "MSFT", "GOOGL"],
             strategy="anomaly",
             config_obj=mock_config,
@@ -336,7 +339,7 @@ class TestFilterTickers:
         call_args = mock_orchestrator_class.call_args
         assert call_args[1]["strategy"] == "all"
 
-    @patch("src.main.FilterOrchestrator")
+    @patch("src.cli.helpers.filtering.FilterOrchestrator")
     def test_filter_tickers_failure(self, mock_orchestrator_class):
         """Test filtering failure raises RuntimeError."""
         # Setup mocks
@@ -353,14 +356,14 @@ class TestFilterTickers:
 
         # Execute and assert
         with pytest.raises(RuntimeError, match="Filtering failed"):
-            _filter_tickers(
+            filter_tickers(
                 tickers=["AAPL"],
                 strategy="anomaly",
                 config_obj=mock_config,
                 typer_instance=mock_typer,
             )
 
-    @patch("src.main.FilterOrchestrator")
+    @patch("src.cli.helpers.filtering.FilterOrchestrator")
     def test_filter_tickers_no_results(self, mock_orchestrator_class):
         """Test filtering with no tickers passing filter."""
         # Setup mocks
@@ -379,14 +382,14 @@ class TestFilterTickers:
 
         # Execute and assert - should raise error when no tickers pass
         with pytest.raises(RuntimeError):
-            _filter_tickers(
+            filter_tickers(
                 tickers=["AAPL", "MSFT"],
                 strategy="anomaly",
                 config_obj=mock_config,
                 typer_instance=mock_typer,
             )
 
-    @patch("src.main.FilterOrchestrator")
+    @patch("src.cli.helpers.filtering.FilterOrchestrator")
     def test_filter_tickers_with_historical_date(self, mock_orchestrator_class):
         """Test filtering with historical date."""
         # Setup mocks
@@ -406,7 +409,7 @@ class TestFilterTickers:
         historical_date = date(2024, 6, 1)
 
         # Execute
-        result = _filter_tickers(
+        result = filter_tickers(
             tickers=["AAPL"],
             strategy="volume",
             config_obj=mock_config,
@@ -422,11 +425,11 @@ class TestFilterTickers:
 
 @pytest.mark.unit
 class TestRunLLMAnalysis:
-    """Test _run_llm_analysis helper function."""
+    """Test run_llm_analysis helper function."""
 
-    @patch("src.main.SignalCreator")
-    @patch("src.main.LLMAnalysisOrchestrator")
-    @patch("src.main.TokenTracker")
+    @patch("src.cli.helpers.analysis.SignalCreator")
+    @patch("src.cli.helpers.analysis.LLMAnalysisOrchestrator")
+    @patch("src.cli.helpers.analysis.TokenTracker")
     def test_run_llm_analysis_success(
         self, mock_tracker_class, mock_orchestrator_class, mock_signal_creator_class
     ):
@@ -472,7 +475,7 @@ class TestRunLLMAnalysis:
         )()
 
         # Execute
-        signals, _ = _run_llm_analysis(
+        signals, _ = run_llm_analysis(
             tickers=["AAPL"],
             config_obj=mock_config,
             typer_instance=mock_typer,
@@ -484,8 +487,8 @@ class TestRunLLMAnalysis:
         mock_orchestrator.analyze_instrument.assert_called_once()
         mock_typer.echo.assert_called()
 
-    @patch("src.main.LLMAnalysisOrchestrator")
-    @patch("src.main.TokenTracker")
+    @patch("src.cli.helpers.analysis.LLMAnalysisOrchestrator")
+    @patch("src.cli.helpers.analysis.TokenTracker")
     def test_run_llm_analysis_with_debug(self, mock_tracker_class, mock_orchestrator_class):
         """Test LLM analysis with debug mode enabled."""
         # Setup mocks
@@ -502,8 +505,8 @@ class TestRunLLMAnalysis:
         mock_tracker.get_daily_stats.return_value = None
 
         # Execute with debug
-        with patch("src.main.Path") as mock_path:
-            _run_llm_analysis(
+        with patch("src.cli.helpers.analysis.Path") as mock_path:
+            run_llm_analysis(
                 tickers=["AAPL"],
                 config_obj=mock_config,
                 typer_instance=mock_typer,
@@ -513,8 +516,8 @@ class TestRunLLMAnalysis:
             # Assert debug directory was created
             mock_path.return_value.__truediv__.return_value.__truediv__.return_value.mkdir.assert_called()
 
-    @patch("src.main.LLMAnalysisOrchestrator")
-    @patch("src.main.TokenTracker")
+    @patch("src.cli.helpers.analysis.LLMAnalysisOrchestrator")
+    @patch("src.cli.helpers.analysis.TokenTracker")
     def test_run_llm_analysis_error_handling(self, mock_tracker_class, mock_orchestrator_class):
         """Test LLM analysis error handling."""
         # Setup mocks
@@ -534,7 +537,7 @@ class TestRunLLMAnalysis:
         mock_tracker.get_daily_stats.return_value = None
 
         # Execute - should not raise, but return empty signals
-        signals, _ = _run_llm_analysis(
+        signals, _ = run_llm_analysis(
             tickers=["AAPL"],
             config_obj=mock_config,
             typer_instance=mock_typer,
@@ -546,12 +549,12 @@ class TestRunLLMAnalysis:
 
 @pytest.mark.unit
 class TestDownloadPriceData:
-    """Test _download_price_data helper function."""
+    """Test download_price_data helper function."""
 
-    @patch("src.main.time.sleep")
-    @patch("src.main.RateLimiter")
-    @patch("src.main.ProviderManager")
-    @patch("src.main.PriceDataManager")
+    @patch("src.cli.helpers.downloads.time.sleep")
+    @patch("src.cli.helpers.downloads.RateLimiter")
+    @patch("src.cli.helpers.downloads.ProviderManager")
+    @patch("src.cli.helpers.downloads.PriceDataManager")
     def test_download_price_data_success(
         self,
         mock_price_manager_class,
@@ -583,11 +586,11 @@ class TestDownloadPriceData:
         mock_price_manager.store_prices.return_value = 2
 
         # Execute with show_progress=True so we use the progressbar context manager
-        with patch("src.main.typer.progressbar") as mock_progressbar:
+        with patch("src.cli.helpers.downloads.typer.progressbar") as mock_progressbar:
             mock_progressbar.return_value.__enter__ = Mock(return_value=["AAPL", "MSFT"])
             mock_progressbar.return_value.__exit__ = Mock(return_value=False)
 
-            success, skipped, errors, _ = _download_price_data(
+            success, skipped, errors, _ = download_price_data(
                 tickers=["AAPL", "MSFT"],
                 config_obj=mock_config,
                 show_progress=True,
@@ -599,10 +602,10 @@ class TestDownloadPriceData:
         assert errors == 0
         assert mock_provider_manager.get_stock_prices.call_count == 2
 
-    @patch("src.main.time.sleep")
-    @patch("src.main.RateLimiter")
-    @patch("src.main.ProviderManager")
-    @patch("src.main.PriceDataManager")
+    @patch("src.cli.helpers.downloads.time.sleep")
+    @patch("src.cli.helpers.downloads.RateLimiter")
+    @patch("src.cli.helpers.downloads.ProviderManager")
+    @patch("src.cli.helpers.downloads.PriceDataManager")
     def test_download_price_data_skip_existing(
         self,
         mock_price_manager_class,
@@ -627,11 +630,11 @@ class TestDownloadPriceData:
         mock_price_manager.get_data_range.return_value = (today, today)
 
         # Execute without force refresh
-        with patch("src.main.typer.progressbar") as mock_progressbar:
+        with patch("src.cli.helpers.downloads.typer.progressbar") as mock_progressbar:
             mock_progressbar.return_value.__enter__ = Mock(return_value=["AAPL"])
             mock_progressbar.return_value.__exit__ = Mock(return_value=False)
 
-            success, skipped, errors, _ = _download_price_data(
+            success, skipped, errors, _ = download_price_data(
                 tickers=["AAPL"],
                 config_obj=mock_config,
                 force_refresh=False,
@@ -643,10 +646,10 @@ class TestDownloadPriceData:
         assert skipped == 1
         assert errors == 0
 
-    @patch("src.main.time.sleep")
-    @patch("src.main.RateLimiter")
-    @patch("src.main.ProviderManager")
-    @patch("src.main.PriceDataManager")
+    @patch("src.cli.helpers.downloads.time.sleep")
+    @patch("src.cli.helpers.downloads.RateLimiter")
+    @patch("src.cli.helpers.downloads.ProviderManager")
+    @patch("src.cli.helpers.downloads.PriceDataManager")
     def test_download_price_data_force_refresh(
         self,
         mock_price_manager_class,
@@ -676,11 +679,11 @@ class TestDownloadPriceData:
         mock_price_manager.store_prices.return_value = 1
 
         # Execute with force refresh
-        with patch("src.main.typer.progressbar") as mock_progressbar:
+        with patch("src.cli.helpers.downloads.typer.progressbar") as mock_progressbar:
             mock_progressbar.return_value.__enter__ = Mock(return_value=["AAPL"])
             mock_progressbar.return_value.__exit__ = Mock(return_value=False)
 
-            success, skipped, errors, _ = _download_price_data(
+            success, skipped, errors, _ = download_price_data(
                 tickers=["AAPL"],
                 config_obj=mock_config,
                 force_refresh=True,
@@ -692,10 +695,10 @@ class TestDownloadPriceData:
         assert skipped == 0
         mock_provider_manager.get_stock_prices.assert_called_once()
 
-    @patch("src.main.time.sleep")
-    @patch("src.main.RateLimiter")
-    @patch("src.main.ProviderManager")
-    @patch("src.main.PriceDataManager")
+    @patch("src.cli.helpers.downloads.time.sleep")
+    @patch("src.cli.helpers.downloads.RateLimiter")
+    @patch("src.cli.helpers.downloads.ProviderManager")
+    @patch("src.cli.helpers.downloads.PriceDataManager")
     def test_download_price_data_error_handling(
         self,
         mock_price_manager_class,
@@ -719,11 +722,11 @@ class TestDownloadPriceData:
         mock_provider_manager.get_stock_prices.side_effect = Exception("API error")
 
         # Execute
-        with patch("src.main.typer.progressbar") as mock_progressbar:
+        with patch("src.cli.helpers.downloads.typer.progressbar") as mock_progressbar:
             mock_progressbar.return_value.__enter__ = Mock(return_value=["AAPL", "MSFT"])
             mock_progressbar.return_value.__exit__ = Mock(return_value=False)
 
-            success, skipped, errors, _ = _download_price_data(
+            success, skipped, errors, _ = download_price_data(
                 tickers=["AAPL", "MSFT"],
                 config_obj=mock_config,
                 show_progress=True,
