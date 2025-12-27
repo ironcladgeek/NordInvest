@@ -10,6 +10,7 @@ from src.agents.output_models import (
     SignalSynthesisOutput,
     TechnicalAnalysisOutput,
 )
+from src.config import get_config
 from src.config.llm import initialize_llm_client
 from src.config.schemas import LLMConfig
 from src.utils.logging import get_logger
@@ -444,6 +445,12 @@ class CrewAITaskFactory:
         Returns:
             Configured Task object
         """
+        # Get weights from configuration
+        config = get_config()
+        w_tech = config.analysis.weight_technical
+        w_fund = config.analysis.weight_fundamental
+        w_sent = config.analysis.weight_sentiment
+
         return Task(
             description=(
                 f"Synthesize all analyses for {ticker} into a structured investment signal.\n"
@@ -452,8 +459,8 @@ class CrewAITaskFactory:
                 f"✓ DO: Synthesize the analysis data provided below\n"
                 f"✓ DO: Output ONLY a JSON object (no markdown, no text before or after)\n"
                 f"✓ DO: Extract scores from the analysis results provided\n"
-                f"✓ DO: Calculate final_score = (tech_score * 0.35) + "
-                f"(fundamental_score * 0.35) + (sentiment_score * 0.30)\n"
+                f"✓ DO: Calculate final_score = (tech_score * {w_tech}) + "
+                f"(fundamental_score * {w_fund}) + (sentiment_score * {w_sent})\n"
                 f"✗ DO NOT: Attempt to fetch or retrieve any data\n"
                 f"✗ DO NOT: Use any tools or make any function calls\n"
                 f"✗ DO NOT: Ask for additional data\n"
@@ -489,8 +496,8 @@ class CrewAITaskFactory:
                 f'    "fundamental": 0-100,\n'
                 f'    "sentiment": 0-100\n'
                 f"  }},\n"
-                f'  "final_score": 0-100 (weighted: fundamental 35%, technical '
-                f"35%, sentiment 30%),\n"
+                f'  "final_score": 0-100 (weighted: fundamental {w_fund * 100:.0f}%, technical '
+                f"{w_tech * 100:.0f}%, sentiment {w_sent * 100:.0f}%),\n"
                 f'  "recommendation": "strong_buy|buy|hold_bullish|hold|'
                 f'hold_bearish|sell|strong_sell",\n'
                 f'  "confidence": 0-100,\n'
