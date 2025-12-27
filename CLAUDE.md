@@ -263,7 +263,25 @@ Output (Files, Terminal, Cost Summary)
 ```
 FalconSignals/
 ├── src/
-│   ├── main.py              # CLI entry point
+│   ├── main.py              # CLI entry point (16 lines - imports from cli package)
+│   ├── cli/                 # Modular CLI structure (NEW - Dec 2025)
+│   │   ├── app.py           # Typer app setup and version callback
+│   │   ├── commands/        # CLI command modules (15 commands)
+│   │   │   ├── analyze.py   # Market analysis command (633 lines)
+│   │   │   ├── report.py    # Report generation command (231 lines)
+│   │   │   ├── publish.py   # Website publishing command (282 lines)
+│   │   │   ├── journal.py   # Trading journal command (721 lines)
+│   │   │   ├── watchlist.py # Watchlist management commands (342 lines)
+│   │   │   ├── performance.py # Performance tracking commands (304 lines)
+│   │   │   ├── download.py  # Price download command (171 lines)
+│   │   │   ├── config.py    # Config management commands (94 lines)
+│   │   │   └── utils.py     # Utility commands (197 lines)
+│   │   ├── helpers/         # Reusable helper functions
+│   │   │   ├── filtering.py # Ticker filtering logic (138 lines)
+│   │   │   ├── analysis.py  # LLM analysis orchestration (183 lines)
+│   │   │   ├── downloads.py # Price data download logic (140 lines)
+│   │   │   └── watchlist.py # Watchlist scan logic (176 lines)
+│   │   └── shared/          # Shared CLI utilities
 │   ├── agents/              # CrewAI agent definitions
 │   │   ├── base.py          # BaseAgent and AgentConfig
 │   │   ├── crew.py          # AnalysisCrew orchestrator
