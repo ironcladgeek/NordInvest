@@ -332,7 +332,7 @@ class TestJournalCLIHelp:
 
     def test_journal_help(self, runner):
         """Test journal --help command."""
-        result = runner.invoke(app, ["journal", "--help"])
+        result = runner.invoke(app, ["journal", "--help"], color=False)
 
         assert result.exit_code == 0
         assert "Manage trading journal entries interactively" in result.stdout
