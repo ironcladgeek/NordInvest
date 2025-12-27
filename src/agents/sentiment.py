@@ -238,11 +238,12 @@ class SignalSynthesisAgent(BaseAgent):
             fundamental_score = context.get("fundamental_score", 50)
             sentiment_score = context.get("sentiment_score", 50)
 
-            # Weight the scores (configurable)
+            # Weight the scores (from configuration)
+            config = get_config()
             weights = {
-                "technical": 0.35,
-                "fundamental": 0.35,
-                "sentiment": 0.30,
+                "technical": config.analysis.weight_technical,
+                "fundamental": config.analysis.weight_fundamental,
+                "sentiment": config.analysis.weight_sentiment,
             }
 
             # Calculate final score

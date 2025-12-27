@@ -1,6 +1,7 @@
 """Tests for signal synthesis and scoring."""
 
 from datetime import datetime
+from unittest.mock import patch
 
 import pytest
 
@@ -178,3 +179,42 @@ class TestSignalSynthesis:
         assert report.total_signals_generated == 1
         assert len(report.strong_signals) >= 0
         assert report.report_date is not None
+
+    def test_custom_weights_respected(self):
+        """Test that custom weights from config are used in scoring."""
+        from unittest.mock import Mock
+
+        from src.agents.sentiment import SignalSynthesisAgent
+
+        # Create a mock config with custom weights (different from default 0.35/0.35/0.30)
+        mock_config = Mock()
+        mock_config.analysis = Mock()
+        mock_config.analysis.weight_fundamental = 0.5
+        mock_config.analysis.weight_technical = 0.3
+        mock_config.analysis.weight_sentiment = 0.2
+
+        # Mock the get_config to return our custom config
+        with patch("src.agents.sentiment.get_config", return_value=mock_config):
+            agent = SignalSynthesisAgent()
+
+            # Test data with known scores
+            context = {
+                "ticker": "TEST",
+                "technical_score": 60,
+                "fundamental_score": 80,
+                "sentiment_score": 40,
+            }
+
+            # Expected score with custom weights:
+            # (60 * 0.3) + (80 * 0.5) + (40 * 0.2) = 18 + 40 + 8 = 66
+            expected_score = 66.0
+
+            result = agent.execute("Synthesize signals", context)
+
+            assert result["status"] == "success"
+            assert result["ticker"] == "TEST"
+            # Verify the final score matches custom weights calculation
+            assert result["final_score"] == expected_score, (
+                f"Expected score {expected_score} with weights "
+                f"(tech=0.3, fund=0.5, sent=0.2), got {result['final_score']}"
+            )
