@@ -101,8 +101,8 @@ def track_performance(
             try:
                 # Get ticker symbol
                 ticker_symbol = rec.ticker_obj.symbol if rec.ticker_obj else None
-                if not ticker_symbol:
-                    logger.warning(f"Skipping recommendation {rec.id}: no ticker symbol")
+                if not ticker_symbol or rec.id is None:
+                    logger.warning(f"Skipping recommendation {rec.id}: no ticker symbol or ID")
                     failed_count += 1
                     continue
 

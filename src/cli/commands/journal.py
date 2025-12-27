@@ -18,7 +18,7 @@ logger = get_logger(__name__)
 
 
 @app.command()
-def journal(
+def journal(  # type: ignore[reportGeneralTypeIssues]
     action: str = typer.Option(
         None,
         "--action",

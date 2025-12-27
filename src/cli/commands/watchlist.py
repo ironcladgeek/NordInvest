@@ -107,6 +107,10 @@ def watchlist(
                 raise typer.Exit(code=1)
 
             ticker_symbol = rec.get("ticker")
+            if not ticker_symbol:
+                typer.echo("❌ No ticker symbol found for recommendation", err=True)
+                raise typer.Exit(code=1)
+
             success, message = watchlist_repo.add_to_watchlist(
                 ticker_symbol, recommendation_id=add_recommendation
             )

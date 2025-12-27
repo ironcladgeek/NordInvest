@@ -176,7 +176,7 @@ def report(
                 confidence_threshold=confidence_threshold,
                 final_score_threshold=final_score_threshold,
             )
-        else:
+        elif date:  # Type guard for pyright
             signals = repo.get_recommendations_by_date(
                 report_date=date,
                 analysis_mode=analysis_mode,
@@ -184,6 +184,8 @@ def report(
                 confidence_threshold=confidence_threshold,
                 final_score_threshold=final_score_threshold,
             )
+        else:
+            signals = []
 
         if not signals:
             typer.echo("⚠️  No signals found matching the specified criteria")

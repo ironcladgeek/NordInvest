@@ -52,14 +52,51 @@ def download_price_data(
     skipped_count = 0
     error_count = 0
 
-    iterator = (
-        typer.progressbar(tickers, label="Downloading prices", show_pos=True, show_percent=True)
-        if show_progress
-        else tickers
-    )
+    if show_progress:
+        with typer.progressbar(
+            tickers, label="Downloading prices", show_pos=True, show_percent=True
+        ) as progress:
+            for ticker in progress:
+                try:
+                    # Check if we need to download
+                    if not force_refresh and price_manager.has_data(ticker):
+                        # Check if data is relatively current (within last 2 days)
+                        _, existing_end = price_manager.get_data_range(ticker)
+                        if existing_end and (datetime.now().date() - existing_end).days <= 2:
+                            logger.debug(f"Skipping {ticker} - data is current")
+                            skipped_count += 1
+                            continue
 
-    with iterator as progress:
-        for ticker in progress:
+                    # Wait for rate limiter
+                    rate_limiter.wait_if_needed(tokens=1)
+
+                    # Fetch prices using provider manager with period parameter
+                    prices = provider_manager.get_stock_prices(ticker, period=period)
+
+                    if prices:
+                        # Store to CSV
+                        stored = price_manager.store_prices(
+                            ticker,
+                            [p.model_dump() for p in prices],
+                            append=not force_refresh,
+                        )
+                        if stored > 0:
+                            success_count += 1
+                            logger.debug(f"Downloaded {len(prices)} prices for {ticker}")
+                    else:
+                        logger.warning(f"No price data received for {ticker}")
+                        error_count += 1
+
+                except KeyboardInterrupt:
+                    typer.echo("\n\n⚠️  Download interrupted by user")
+                    break
+                except Exception as e:
+                    logger.error(f"Error downloading {ticker}: {e}")
+                    error_count += 1
+                    # Small delay on error to avoid hammering the API
+                    time.sleep(0.5)
+    else:
+        for ticker in tickers:
             try:
                 # Check if we need to download
                 if not force_refresh and price_manager.has_data(ticker):

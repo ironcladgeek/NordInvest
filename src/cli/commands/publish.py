@@ -187,7 +187,7 @@ def publish(
                     confidence_threshold=confidence_threshold,
                     final_score_threshold=final_score_threshold,
                 )
-            else:
+            elif date:  # Type guard for pyright
                 signals = repo.get_recommendations_by_date(
                     report_date=date,
                     analysis_mode=analysis_mode,
@@ -195,11 +195,16 @@ def publish(
                     confidence_threshold=confidence_threshold,
                     final_score_threshold=final_score_threshold,
                 )
+            else:
+                signals = []
 
             if not signals:
                 filters_desc = "matching the specified filters" if filters_applied else ""
+                session_or_date = (
+                    f"session {session_id}" if session_id else f"date {date or 'unknown'}"
+                )
                 typer.echo(
-                    f"❌ No signals found for {'session ' + str(session_id) if session_id else 'date ' + date} {filters_desc}",
+                    f"❌ No signals found for {session_or_date} {filters_desc}",
                     err=True,
                 )
                 raise typer.Exit(code=1)
